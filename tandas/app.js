@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '0.6 · 1 nov';
+const VERSION = '0.7 · 1 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = '';
 const aiReady = () => !!(S.apiKey || (PROXY && S.code));
@@ -15,14 +15,21 @@ const DAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', '
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const eur = v => (v || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+const REG = () => (window.REGIONS || {})[S && S.region] || { name: 'España', currency: 'EUR', locale: 'es-ES' };
+const eur = v => (v || 0).toLocaleString(REG().locale, { style: 'currency', currency: REG().currency });
+const SYM = () => REG().currency === 'USD' ? '$' : '€';
+function applyRegion(code) {
+  S.region = code; const R = (window.REGIONS[code] || {}).P;
+  const base = window.SEED.P;
+  for (const n in S.P) { const src = R && R[n] ? { f: R[n][0], p: R[n][1], q: R[n][2] } : base[n]; if (src) Object.assign(S.P[n], { f: src.f, p: src.p, q: src.q }); }
+}
 const r2 = v => Math.round(v * 100) / 100;
 
 /* ---------- Estado ---------- */
 let S = load();
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
-  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', model: MODELS[0][0], chat: [] };
+  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   if (!s) return Object.assign(seed, ui);
@@ -188,7 +195,7 @@ function renderDetails(si, pend) {
 
 /* ---------- Render: recetas ---------- */
 function haveLine(r, it) {
-  if (!r.i.length) return `<div class="have ok">✓ Siempre disponible · 0 €</div>`;
+  if (!r.i.length) return `<div class="have ok">✓ Siempre disponible · ${eur(0)}</div>`;
   if (it && it.cocinado) return `<div class="have ok">✓ Ya cocinado · te quedan ${leftOf(it)} ${leftOf(it) === 1 ? 'plato' : 'platos'}</div>`;
   const opc = it ? it.opc : false; const k = it ? it.k : null; const want = it ? it.veces : 1; const max = maxPlatos(r, opc, k);
   const pl = n => n === 1 ? 'plato' : 'platos';
@@ -355,9 +362,12 @@ function openSettings() {
   const el = $('#settings-in');
   el.innerHTML = `
     <div class="sheet-head"><h2>Ajustes</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
-    <label class="field">Tu nombre<input id="st-name" autocomplete="given-name" maxlength="30" value="${esc(S.name)}"></label>
     <div class="grid2">
-      <label class="field">Presupuesto semanal (€)<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
+      <label class="field">Tu nombre<input id="st-name" autocomplete="given-name" maxlength="30" value="${esc(S.name)}"></label>
+      <label class="field">País y moneda<select id="st-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field">Presupuesto semanal (${SYM()})<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
       <label class="field">La semana empieza el<select id="st-week">${DAYS.map((d, i) => `<option value="${i}" ${i === S.weekStart ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
       <label class="field">Adultos<input id="st-adults" type="number" min="1" max="8" value="${S.adults}"></label>
       <label class="field">Niños (½ ración)<input id="st-kids" type="number" min="0" max="8" value="${S.kids}"></label>
@@ -387,6 +397,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value);
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
+    const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); toast(`Precios de referencia de ${REG().name}`); }
     S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
   } else if (b.id === 'st-export') {
@@ -460,13 +471,13 @@ async function readTicket(file) {
       name: 'registrar_ticket', description: 'Registra las líneas de un ticket de compra de supermercado.',
       input_schema: {
         type: 'object', required: ['tienda', 'fecha', 'total', 'lineas'], properties: {
-          tienda: { type: 'string' }, fecha: { type: 'string', description: 'YYYY-MM-DD' }, total: { type: 'number', description: 'Total pagado en euros' },
+          tienda: { type: 'string' }, fecha: { type: 'string', description: 'YYYY-MM-DD' }, total: { type: 'number', description: 'Total pagado, en la moneda del ticket' },
           lineas: {
             type: 'array', items: {
               type: 'object', required: ['desc', 'uds', 'importe', 'producto', 'cantidad_inventario', 'tipo'], properties: {
                 desc: { type: 'string', description: 'Texto de la línea tal como aparece' },
                 uds: { type: 'number', description: 'Unidades o paquetes comprados' },
-                importe: { type: 'number', description: 'Importe total de la línea en euros' },
+                importe: { type: 'number', description: 'Importe total de la línea, en la moneda del ticket' },
                 producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
                 cantidad_inventario: { type: 'number', description: 'Cantidad que entra a la despensa en la unidad del producto del catálogo (g, ml o ud). 0 si producto es null' },
                 tipo: { type: 'string', enum: ['De la lista', 'Extra'] },
@@ -504,13 +515,13 @@ function renderReview() {
   $('#scan-in').innerHTML = `
     <div class="sheet-head"><h2>Revisa el ticket</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
     <div class="grid2"><label class="field">Tienda<input data-rv="tienda" value="${esc(RV.tienda)}"></label><label class="field">Fecha<input type="date" data-rv="fecha" value="${esc(RV.fecha)}"></label></div>
-    <label class="field">Total pagado (€)<input type="number" step="0.01" inputmode="decimal" data-rv="total" value="${RV.total}"></label>
+    <label class="field">Total pagado (${SYM()})<input type="number" step="0.01" inputmode="decimal" data-rv="total" value="${RV.total}"></label>
     <div class="check ${Math.abs(diff) < 0.02 ? 'ok' : 'bad'}">${Math.abs(diff) < 0.02 ? `✓ Las líneas suman ${eur(sum)}, cuadra con el total` : `Las líneas suman ${eur(sum)}; diferencia de ${eur(diff)} con el total`}</div>
     ${RV.lineas.map((l, i) => { const p = S.P[l.producto]; return `<div class="rv">
       <div class="rv-top"><input data-i="${i}" data-f="desc" value="${esc(l.desc)}" aria-label="Descripción"><button type="button" class="icon-btn" data-rvdel="${i}" aria-label="Quitar línea" style="width:36px;height:36px">✕</button></div>
       <div class="rv-grid">
         <label>Producto<select data-i="${i}" data-f="producto">${prodOptions(l.producto)}</select></label>
-        <label>Importe (€)<input type="number" step="0.01" inputmode="decimal" data-i="${i}" data-f="importe" value="${l.importe}"></label>
+        <label>Importe (${SYM()})<input type="number" step="0.01" inputmode="decimal" data-i="${i}" data-f="importe" value="${l.importe}"></label>
         <label>Unidades<input type="number" min="0" step="1" data-i="${i}" data-f="uds" value="${l.uds}"></label>
         <label>A la despensa (${p ? p.u : '—'})<input type="number" min="0" inputmode="decimal" data-i="${i}" data-f="inv" value="${l.inv}" ${p ? '' : 'disabled'}></label>
         <label>Tipo<select data-i="${i}" data-f="tipo"><option ${l.tipo === 'De la lista' ? 'selected' : ''}>De la lista</option><option ${l.tipo === 'Extra' ? 'selected' : ''}>Extra</option></select></label>
@@ -625,7 +636,7 @@ Cómo hablas:
 - Si algo es ambiguo, haz la suposición más razonable (por ejemplo, "un poco" de una salsa son unos 10 g) y menciónala de pasada.
 Usa siempre los nombres exactos del catálogo y los id de receta en las herramientas, pero al hablar usa nombres normales.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-Presupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
+País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
 Despensa: ${stock || 'vacía'}.
 Menú de la semana: ${plan}.
 Catálogo (nombre | unidad | formato):
@@ -693,6 +704,7 @@ function openWelcome() {
     <div class="sheet-head"><h2>Bienvenido a Tandas</h2></div>
     <p class="lead" style="margin:0">Planifica tus comidas por tandas, controla lo que tienes en casa y cuánto te cuesta cada plato. Es una versión de prueba: tus datos se guardan solo en este móvil.</p>
     <label class="field">¿Cómo te llamas?<input id="wl-name" autocomplete="given-name" maxlength="30"></label>
+    <label class="field">¿Dónde haces la compra?<select id="wl-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
     ${PROXY ? '<label class="field">Código de invitación<input id="wl-code" autocomplete="off" autocapitalize="none" placeholder="Te lo pasaron con el enlace"></label>' : ''}
     <button type="button" class="btn wide" id="wl-go">Empezar</button>
     <button type="button" class="link" id="wl-import" style="justify-self:center">Tengo una copia de mis datos</button>`;
@@ -702,7 +714,7 @@ $('#dlg-welcome').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
   if (b.id === 'wl-go') {
     const n = $('#wl-name').value.trim(); if (!n) return toast('Escribe tu nombre');
-    S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
+    S.name = n; if ($('#wl-region').value !== S.region) applyRegion($('#wl-region').value); if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
   } else if (b.id === 'wl-import') { const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
 });
 $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
