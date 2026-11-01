@@ -3,7 +3,10 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '0.5 · 1 nov';
+const VERSION = '0.6 · 1 nov';
+// Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
+const PROXY = '';
+const aiReady = () => !!(S.apiKey || (PROXY && S.code));
 const MODELS = [['claude-haiku-5-5', 'Haiku (rápido y económico)'], ['claude-sonnet-5-5', 'Sonnet (más preciso)']];
 const EXTRA_GROUPS = ['Dulces y antojos', 'Desayunos', 'Fiambres para clase', 'Salsas', 'Bebidas', 'Otros'];
 const MEALS = [['desayuno', 'Desayunos', 'var(--mid)'], ['almuerzo', 'Almuerzos', 'var(--accent)'], ['cena', 'Cenas', 'var(--blue)']];
@@ -19,7 +22,7 @@ const r2 = v => Math.round(v * 100) / 100;
 let S = load();
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
-  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', model: MODELS[0][0], chat: [] };
+  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   if (!s) return Object.assign(seed, ui);
@@ -352,6 +355,7 @@ function openSettings() {
   const el = $('#settings-in');
   el.innerHTML = `
     <div class="sheet-head"><h2>Ajustes</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
+    <label class="field">Tu nombre<input id="st-name" autocomplete="given-name" maxlength="30" value="${esc(S.name)}"></label>
     <div class="grid2">
       <label class="field">Presupuesto semanal (€)<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
       <label class="field">La semana empieza el<select id="st-week">${DAYS.map((d, i) => `<option value="${i}" ${i === S.weekStart ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
@@ -361,9 +365,10 @@ function openSettings() {
     <p class="small muted" style="margin:0">Comidas a cubrir por semana</p>
     <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${MEALS.map(([k, l]) => `<label class="field">${l}<input id="st-t-${k}" type="number" min="0" max="21" value="${S.target[k]}"></label>`).join('')}</div>
     <h3 style="font-size:16px;margin-top:6px">Inteligencia artificial</h3>
-    <label class="field">Clave de API de Anthropic<input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(S.apiKey)}"></label>
+    ${PROXY ? `<label class="field">Código de invitación<input id="st-code" autocomplete="off" autocapitalize="none" placeholder="El que te pasaron con el enlace" value="${esc(S.code)}"></label>` : ''}
+    <label class="field">${PROXY ? 'Clave de API propia (opcional)' : 'Clave de API de Anthropic'}<input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(S.apiKey)}"></label>
     <label class="field">Modelo<select id="st-model">${MODELS.map(([v, l]) => `<option value="${v}" ${v === S.model ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <p class="small muted" style="margin:0">La clave se guarda solo en este móvil. Pon un límite de gasto mensual en console.anthropic.com.</p>
+    <p class="small muted" style="margin:0">${PROXY ? 'Con el código de invitación no necesitas nada más. Si pones una clave propia, se usa esa y se guarda solo en este móvil.' : 'La clave se guarda solo en este móvil. Pon un límite de gasto mensual en console.anthropic.com.'}</p>
     <h3 style="font-size:16px;margin-top:6px">Tus datos</h3>
     <div class="grid2">
       <button type="button" class="btn ghost" id="st-export">Exportar copia</button>
@@ -382,39 +387,43 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value);
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
-    S.apiKey = $('#st-key').value.trim(); S.model = $('#st-model').value;
+    S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
   } else if (b.id === 'st-export') {
-    const data = { ...S, apiKey: '' }; const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const data = { ...S, apiKey: '', code: '' }; const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tandas-copia-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Copia descargada (sin tu clave de API)');
   } else if (b.id === 'st-import') $('#file-backup').click();
   else if (b.id === 'st-install' && installEvt) { installEvt.prompt(); installEvt = null; }
   else if (b.id === 'st-reset') {
     if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = 'Pulsa otra vez para borrarlo todo'; return; }
-    localStorage.removeItem(KEY); S = load(); S.apiKey = ''; $('#dlg-settings').close(); render(); toast('Datos borrados');
+    localStorage.removeItem(KEY); S = load(); $('#dlg-settings').close(); render(); toast('Datos borrados');
   }
 });
 $('#file-backup').addEventListener('change', async ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-  try { const d = JSON.parse(await f.text()); if (!d.P || !d.R || !d.stock) throw new Error(); const key = S.apiKey; localStorage.setItem(KEY, JSON.stringify(d)); S = load(); S.apiKey = key; $('#dlg-settings').close(); render(); toast('Copia importada'); }
+  try { const d = JSON.parse(await f.text()); if (!d.P || !d.R || !d.stock) throw new Error(); const keep = { apiKey: S.apiKey, code: S.code, name: S.name }; localStorage.setItem(KEY, JSON.stringify(d)); S = load(); S.apiKey = keep.apiKey; S.code = keep.code; if (!S.name) S.name = keep.name; save(); $('#dlg-settings').close(); render(); toast('Copia importada'); }
   catch (e) { toast('Ese archivo no es una copia válida de Tandas'); }
 });
 
 /* ---------- IA: llamada a la API ---------- */
 async function claude(body) {
-  if (!S.apiKey) throw new Error('Falta la clave de API. Añádela en Ajustes.');
+  if (!aiReady()) throw new Error(PROXY ? 'Falta tu código de invitación. Añádelo en Ajustes.' : 'Falta la clave de API. Añádela en Ajustes.');
+  const direct = !!S.apiKey;
   let res;
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(direct ? 'https://api.anthropic.com/v1/messages' : PROXY, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': S.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      headers: direct ? { 'content-type': 'application/json', 'x-api-key': S.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } : { 'content-type': 'application/json', 'x-tandas-code': S.code },
       body: JSON.stringify({ model: S.model, max_tokens: 2000, ...body })
     });
   } catch (e) { throw new Error('Sin conexión con la IA. Revisa tu internet.'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const m = data && data.error && data.error.message || '';
+    const t = data && data.error && data.error.type;
+    if (t === 'codigo') throw new Error('Tu código de invitación no es válido. Revísalo en Ajustes.');
+    if (t === 'limite') throw new Error('Has llegado al límite de uso de hoy. Mañana vuelve a funcionar.');
     if (res.status === 401) throw new Error('La clave de API no es válida. Revísala en Ajustes.');
     if (res.status === 429) throw new Error('Demasiadas peticiones o límite de gasto alcanzado. Prueba en un rato.');
     if (res.status === 404 && /model/i.test(m)) throw new Error('El modelo elegido no está disponible. Cambia de modelo en Ajustes.');
@@ -431,7 +440,7 @@ let RV = null;
 function openScan() {
   $('#scan-in').innerHTML = `
     <div class="sheet-head"><h2>Escanear ticket</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
-    <p class="lead">Haz una foto al ticket o elige una de la galería. ${S.apiKey ? 'La IA lo leerá y podrás revisarlo antes de guardar.' : 'Para leerlo automáticamente añade tu clave de API en Ajustes; mientras, puedes apuntarlo a mano.'}</p>
+    <p class="lead">Haz una foto al ticket o elige una de la galería. ${aiReady() ? 'La IA lo leerá y podrás revisarlo antes de guardar.' : `Para leerlo automáticamente añade tu ${PROXY ? 'código de invitación' : 'clave de API'} en Ajustes; mientras, puedes apuntarlo a mano.`}</p>
     <button type="button" class="btn wide" id="sc-cam">Hacer foto</button>
     <button type="button" class="btn ghost wide" id="sc-gal">Elegir de la galería</button>
     <button type="button" class="link" id="sc-manual" style="justify-self:center">Apuntarlo a mano</button>`;
@@ -552,7 +561,7 @@ $('#dlg-scan').addEventListener('change', ev => {
 });
 for (const id of ['#file-cam', '#file-gal']) $(id).addEventListener('change', ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-  if (!S.apiKey) { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); toast('Sin clave de API: apúntalo a mano'); return; }
+  if (!aiReady()) { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); toast('Sin IA configurada: apúntalo a mano'); return; }
   readTicket(f);
 });
 
@@ -607,7 +616,7 @@ function aiContext() {
   const plan = S.plan.map(p => `${byId(p.rid).n} [${p.rid}] ×${p.veces}${p.cocinado ? ` (cocinado, quedan ${leftOf(p)})` : ''}`).join('; ') || 'vacío';
   const recs = S.R.map(r => `${r.id}: ${r.n} (${r.tipos.join('/')}${S.mine.includes(r.id) ? ', en Mi recetario' : ''})`).join('\n');
   const si = spentInfo(); const pend = shop(S.plan).total;
-  return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de Sebas, que vive en Jaén.
+  return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de ${S.name || 'la persona que usa la app'}.
 Cómo hablas:
 - Como un colega español que le echa una mano en la cocina: natural, cercano, de tú. Nada de tono de robot ni de atención al cliente.
 - Corto: una o dos frases. Si hiciste un cambio, di qué cambiaste y cuánto queda, y ya. Ejemplo: "Hecho, te quedan 190 g de champiñones y he quitado un poco de mostaza y de barbacoa."
@@ -628,8 +637,8 @@ function renderAI(busy) {
   const msgs = S.chat.slice(-40);
   $('#ai-in').innerHTML = `
     <div class="sheet-head"><h2>Asistente</h2><div class="head-actions">${msgs.length ? '<button type="button" class="btn ghost small" data-clear>Borrar chat</button>' : ''}<button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div></div>
-    ${S.apiKey ? '' : '<div class="check bad">Añade tu clave de API en Ajustes para usar el asistente.</div>'}
-    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.r === 'a' ? plain(m.t) : m.t)}</div>`).join('') : '<div class="msg a">Hola, Sebas. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>'}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
+    ${aiReady() ? '' : `<div class="check bad">Añade tu ${PROXY ? 'código de invitación' : 'clave de API'} en Ajustes para usar el asistente.</div>`}
+    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.r === 'a' ? plain(m.t) : m.t)}</div>`).join('') : `<div class="msg a">Hola${S.name ? ', ' + esc(S.name) : ''}. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>`}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
     <div class="sugs">${['Me comí 2 griegos de limón', '¿Qué ceno hoy con lo que tengo?', 'Sobró medio paquete de queso rallado', 'Añade 3 tomates a la despensa'].map(s => `<button type="button" class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     <form class="chat-in" id="chat-form"><input id="chat-text" autocomplete="off" placeholder="Escribe aquí…" aria-label="Mensaje"><button type="submit" class="btn" ${busy ? 'disabled' : ''}>Enviar</button></form>`;
   const c = $('#chat'); c.scrollTop = c.scrollHeight;
@@ -678,8 +687,29 @@ $('#dlg-ai').addEventListener('click', ev => {
 $('#dlg-ai').addEventListener('submit', ev => { ev.preventDefault(); const i = $('#chat-text'); const v = i.value; i.value = ''; sendAI(v); });
 for (const d of ['#dlg-settings', '#dlg-scan', '#dlg-ai']) $(d).addEventListener('click', ev => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
 
+/* ---------- Bienvenida ---------- */
+function openWelcome() {
+  $('#welcome-in').innerHTML = `
+    <div class="sheet-head"><h2>Bienvenido a Tandas</h2></div>
+    <p class="lead" style="margin:0">Planifica tus comidas por tandas, controla lo que tienes en casa y cuánto te cuesta cada plato. Es una versión de prueba: tus datos se guardan solo en este móvil.</p>
+    <label class="field">¿Cómo te llamas?<input id="wl-name" autocomplete="given-name" maxlength="30"></label>
+    ${PROXY ? '<label class="field">Código de invitación<input id="wl-code" autocomplete="off" autocapitalize="none" placeholder="Te lo pasaron con el enlace"></label>' : ''}
+    <button type="button" class="btn wide" id="wl-go">Empezar</button>
+    <button type="button" class="link" id="wl-import" style="justify-self:center">Tengo una copia de mis datos</button>`;
+  $('#dlg-welcome').showModal();
+}
+$('#dlg-welcome').addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.id === 'wl-go') {
+    const n = $('#wl-name').value.trim(); if (!n) return toast('Escribe tu nombre');
+    S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
+  } else if (b.id === 'wl-import') { const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
+});
+$('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
+
 /* ---------- Arranque ---------- */
 render();
+if (!S.name) openWelcome();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { reg.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); }); }).catch(() => {});
