@@ -175,6 +175,7 @@ dialog.sheet{overflow-x:hidden}
 .msg{max-width:86%;padding:9px 12px;border-radius:16px;font-size:14px;white-space:pre-wrap}
 .msg.u{justify-self:end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px}
 .msg.a{justify-self:start;background:var(--card2);border-bottom-left-radius:4px}
+.msg.e{justify-self:start;background:transparent;border:1px solid var(--line);color:var(--muted);font-size:13px}
 .msg.t{justify-self:start;background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:12px}
 .chat-in{display:flex;gap:8px}
 .chat-in input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px;color:var(--ink)}

@@ -416,7 +416,9 @@ async function claude(body) {
     if (res.status === 401) throw new Error('La clave de API no es válida. Revísala en Ajustes.');
     if (res.status === 429) throw new Error('Demasiadas peticiones o límite de gasto alcanzado. Prueba en un rato.');
     if (res.status === 404 && /model/i.test(m)) throw new Error('El modelo elegido no está disponible. Cambia de modelo en Ajustes.');
-    throw new Error('La IA respondió con un error: ' + (m || res.status));
+    console.error('API', res.status, m);
+    if (res.status >= 500 || res.status === 529) throw new Error('La IA está saturada ahora mismo. Prueba en un minuto.');
+    throw new Error('No he podido responder esta vez. Vuelve a intentarlo.');
   }
   return data;
 }
@@ -616,19 +618,24 @@ ${recs}`;
 function renderAI(busy) {
   const msgs = S.chat.slice(-40);
   $('#ai-in').innerHTML = `
-    <div class="sheet-head"><h2>Asistente</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
+    <div class="sheet-head"><h2>Asistente</h2><div class="head-actions">${msgs.length ? '<button type="button" class="btn ghost small" data-clear>Borrar chat</button>' : ''}<button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div></div>
     ${S.apiKey ? '' : '<div class="check bad">Añade tu clave de API en Ajustes para usar el asistente.</div>'}
-    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.map(m => `<div class="msg ${m.r}">${esc(m.t)}</div>`).join('') : '<div class="msg a">Hola, Sebas. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>'}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
+    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.t)}</div>`).join('') : '<div class="msg a">Hola, Sebas. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>'}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
     <div class="sugs">${['Me comí 2 griegos de limón', '¿Qué ceno hoy con lo que tengo?', 'Sobró medio paquete de queso rallado', 'Añade 3 tomates a la despensa'].map(s => `<button type="button" class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     <form class="chat-in" id="chat-form"><input id="chat-text" autocomplete="off" placeholder="Escribe aquí…" aria-label="Mensaje"><button type="submit" class="btn" ${busy ? 'disabled' : ''}>Enviar</button></form>`;
   const c = $('#chat'); c.scrollTop = c.scrollHeight;
 }
+function isErr(m) { return m.r === 'a' && /^La IA respondió con un error/.test(m.t); }
 function openAI() { renderAI(false); $('#dlg-ai').showModal(); }
 let aiBusy = false;
 async function sendAI(text) {
   if (!text.trim() || aiBusy) return;
   S.chat.push({ r: 'u', t: text.trim() }); aiBusy = true; renderAI(true); save();
-  const history = S.chat.filter(m => m.r !== 't').slice(-12).map(m => ({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t }));
+  const history = [];
+  for (const m of S.chat.filter(m => (m.r === 'u' || m.r === 'a') && !isErr(m)).slice(-12)) {
+    const role = m.r === 'u' ? 'user' : 'assistant'; const last = history[history.length - 1];
+    if (last && last.role === role) last.content += '\n' + m.t; else history.push({ role, content: m.t });
+  }
   while (history.length && history[0].role !== 'user') history.shift();
   try {
     const messages = history; let loops = 0;
@@ -649,12 +656,13 @@ async function sendAI(text) {
       messages.push({ role: 'user', content: results });
       render();
     }
-  } catch (e) { S.chat.push({ r: 'a', t: e.message }); }
+  } catch (e) { S.chat.push({ r: 'e', t: e.message }); }
   aiBusy = false; render(); renderAI(false);
 }
 $('#dlg-ai').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
   if (b.dataset.close !== undefined) return $('#dlg-ai').close();
+  if (b.dataset.clear !== undefined) { S.chat = []; save(); return renderAI(false); }
   if (b.dataset.sug) sendAI(b.dataset.sug);
 });
 $('#dlg-ai').addEventListener('submit', ev => { ev.preventDefault(); const i = $('#chat-text'); const v = i.value; i.value = ''; sendAI(v); });
