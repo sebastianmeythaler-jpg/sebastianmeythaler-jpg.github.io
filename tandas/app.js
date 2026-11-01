@@ -3,6 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
+const VERSION = '0.5 · 1 nov';
 const MODELS = [['claude-haiku-5-5', 'Haiku (rápido y económico)'], ['claude-sonnet-5-5', 'Sonnet (más preciso)']];
 const EXTRA_GROUPS = ['Dulces y antojos', 'Desayunos', 'Fiambres para clase', 'Salsas', 'Bebidas', 'Otros'];
 const MEALS = [['desayuno', 'Desayunos', 'var(--mid)'], ['almuerzo', 'Almuerzos', 'var(--accent)'], ['cena', 'Cenas', 'var(--blue)']];
@@ -370,7 +371,8 @@ function openSettings() {
     </div>
     ${installEvt ? '<button type="button" class="btn wide" id="st-install">Instalar en el móvil</button>' : ''}
     <button type="button" class="btn wide" id="st-save">Guardar</button>
-    <button type="button" class="link" id="st-reset" style="justify-self:center">Borrar todos los datos</button>`;
+    <button type="button" class="link" id="st-reset" style="justify-self:center">Borrar todos los datos</button>
+    <p class="muted small" style="text-align:center;margin:0">Versión ${VERSION}</p>`;
   $('#dlg-settings').showModal();
 }
 $('#dlg-settings').addEventListener('click', async ev => {
@@ -605,7 +607,14 @@ function aiContext() {
   const plan = S.plan.map(p => `${byId(p.rid).n} [${p.rid}] ×${p.veces}${p.cocinado ? ` (cocinado, quedan ${leftOf(p)})` : ''}`).join('; ') || 'vacío';
   const recs = S.R.map(r => `${r.id}: ${r.n} (${r.tipos.join('/')}${S.mine.includes(r.id) ? ', en Mi recetario' : ''})`).join('\n');
   const si = spentInfo(); const pend = shop(S.plan).total;
-  return `Eres el asistente de la app Tandas, que ayuda a Sebas a planificar comidas por tandas, controlar su despensa y su gasto en comida. Responde en español, breve y claro (1–3 frases). Cuando te pidan un cambio, hazlo con las herramientas y confirma en una frase. Si algo es ambiguo, haz la suposición más razonable y dila. Usa siempre los nombres exactos del catálogo y los id de receta.
+  return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de Sebas, que vive en Jaén.
+Cómo hablas:
+- Como un colega español que le echa una mano en la cocina: natural, cercano, de tú. Nada de tono de robot ni de atención al cliente.
+- Corto: una o dos frases. Si hiciste un cambio, di qué cambiaste y cuánto queda, y ya. Ejemplo: "Hecho, te quedan 190 g de champiñones y he quitado un poco de mostaza y de barbacoa."
+- Texto plano. Prohibido usar asteriscos, almohadillas, negritas, listas con guiones, emojis o tablas: la app no los muestra bien.
+- No empieces con "¡Claro!", "¡Perfecto!", "Entendido" ni similares, no repitas lo que te ha dicho, no expliques qué herramientas usas y no ofrezcas más ayuda al final.
+- Si algo es ambiguo, haz la suposición más razonable (por ejemplo, "un poco" de una salsa son unos 10 g) y menciónala de pasada.
+Usa siempre los nombres exactos del catálogo y los id de receta en las herramientas, pero al hablar usa nombres normales.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
 Presupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
 Despensa: ${stock || 'vacía'}.
@@ -620,11 +629,12 @@ function renderAI(busy) {
   $('#ai-in').innerHTML = `
     <div class="sheet-head"><h2>Asistente</h2><div class="head-actions">${msgs.length ? '<button type="button" class="btn ghost small" data-clear>Borrar chat</button>' : ''}<button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div></div>
     ${S.apiKey ? '' : '<div class="check bad">Añade tu clave de API en Ajustes para usar el asistente.</div>'}
-    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.t)}</div>`).join('') : '<div class="msg a">Hola, Sebas. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>'}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
+    <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.r === 'a' ? plain(m.t) : m.t)}</div>`).join('') : '<div class="msg a">Hola, Sebas. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>'}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
     <div class="sugs">${['Me comí 2 griegos de limón', '¿Qué ceno hoy con lo que tengo?', 'Sobró medio paquete de queso rallado', 'Añade 3 tomates a la despensa'].map(s => `<button type="button" class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     <form class="chat-in" id="chat-form"><input id="chat-text" autocomplete="off" placeholder="Escribe aquí…" aria-label="Mensaje"><button type="submit" class="btn" ${busy ? 'disabled' : ''}>Enviar</button></form>`;
   const c = $('#chat'); c.scrollTop = c.scrollHeight;
 }
+function plain(t) { return t.replace(/\*\*|__|`/g, '').replace(/^#+\s*/gm, '').replace(/^\s*[-*]\s+/gm, '• ').replace(/\n{3,}/g, '\n\n').trim(); }
 function isErr(m) { return m.r === 'a' && /^La IA respondió con un error/.test(m.t); }
 function openAI() { renderAI(false); $('#dlg-ai').showModal(); }
 let aiBusy = false;
