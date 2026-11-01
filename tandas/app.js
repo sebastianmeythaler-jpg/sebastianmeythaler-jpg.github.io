@@ -632,8 +632,15 @@ async function sendAI(text) {
   while (history.length && history[0].role !== 'user') history.shift();
   try {
     const messages = history; let loops = 0;
+    const system = aiContext(); // fijo durante toda la respuesta: si cambia, la API rechaza los bloques de razonamiento
     while (loops++ < 6) {
-      const data = await claude({ system: aiContext(), tools: AI_TOOLS, messages });
+      let data;
+      try { data = await claude({ system, tools: AI_TOOLS, messages }); }
+      catch (e) {
+        if (!/thinking|signature/i.test(e.message)) throw e;
+        for (const m of messages) if (Array.isArray(m.content)) m.content = m.content.filter(c => c.type !== 'thinking' && c.type !== 'redacted_thinking');
+        data = await claude({ system, tools: AI_TOOLS, messages });
+      }
       const content = data.content || []; const uses = content.filter(c => c.type === 'tool_use');
       const txt = content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
       if (!uses.length) { if (txt) S.chat.push({ r: 'a', t: txt }); break; }
