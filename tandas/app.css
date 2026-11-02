@@ -185,3 +185,15 @@ dialog.sheet{overflow-x:hidden}
 @keyframes gira{to{transform:rotate(360deg)}}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Ventana de «que aproveche» */
+dialog.pop{border:0;padding:0;width:min(340px,calc(100vw - 32px));background:var(--card);color:var(--ink);border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog.pop::backdrop{background:rgba(0,0,0,.55)}
+dialog.pop[open]{animation:pop .3s cubic-bezier(.3,1.5,.5,1)}
+@keyframes pop{from{opacity:0;transform:scale(.85)}}
+.pop-in{padding:24px 20px 18px;display:grid;gap:10px;text-align:center}
+.pop-in h2{margin:0;font-size:22px}
+.pop-in p{margin:0}
+.pop-emoji{font-size:40px;line-height:1}
+.stepper.sm button{width:34px;height:34px;font-size:16px}
+@media (prefers-reduced-motion:reduce){dialog.pop[open]{animation:none}}

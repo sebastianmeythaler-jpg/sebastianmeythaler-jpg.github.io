@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '0.7 · 1 nov';
+const VERSION = '0.8 · 2 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = '';
 const aiReady = () => !!(S.apiKey || (PROXY && S.code));
@@ -29,11 +29,12 @@ const r2 = v => Math.round(v * 100) / 100;
 let S = load();
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
-  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', model: MODELS[0][0], chat: [] };
+  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   if (!s) return Object.assign(seed, ui);
   for (const k in ui) if (s[k] === undefined) s[k] = ui[k];
+  s.remind = Object.assign({}, ui.remind, s.remind); s.remind.sent = s.remind.sent || {};
   for (const k in seed) if (s[k] === undefined) s[k] = seed[k];
   // Las versiones nuevas de la app añaden productos y recetas sin tocar lo tuyo
   for (const k in seed.P) if (!s.P[k]) s.P[k] = seed.P[k];
@@ -42,7 +43,7 @@ function load() {
   for (const k in seed.K) if (s.K[k] === undefined) s.K[k] = seed.K[k];
   return s;
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('No se pudo guardar en este dispositivo'); } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); if (S.remind && S.remind.on) mirrorState(); } catch (e) { toast('No se pudo guardar en este dispositivo'); } }
 
 /* ---------- Cálculos ---------- */
 const byId = id => S.R.find(r => r.id === id);
@@ -250,6 +251,7 @@ function renderRecetas() {
 }
 
 /* ---------- Render: semana, lista, despensa ---------- */
+const eatN = {};
 function renderSemana() {
   const s = shop(S.plan); const e = eq();
   $('#s-consumo').textContent = eur(s.consumo); $('#s-compra').textContent = eur(s.total); $('#s-sobra').textContent = eur(s.sobra);
@@ -265,7 +267,7 @@ function renderSemana() {
       </div>
       <div class="meta" style="gap:8px">
         ${it.cocinado ? '' : `<button type="button" class="btn small ghost" data-act="cook" data-k="${it.k}">Ya lo cociné</button>`}
-        ${mealOf(r) ? `<button type="button" class="btn small" data-act="eat" data-k="${it.k}">Comí 1</button>` : ''}
+        ${mealOf(r) ? (() => { const mx = Math.max(1, leftOf(it)); const n = Math.min(eatN[it.k] || 1, mx); return `<span class="stepper sm"><button type="button" data-act="eatn" data-k="${it.k}" data-d="-1" aria-label="Una ración menos" ${n <= 1 ? 'disabled' : ''}>−</button><b>${n}</b><button type="button" data-act="eatn" data-k="${it.k}" data-d="1" aria-label="Una ración más" ${n >= mx ? 'disabled' : ''}>+</button></span><button type="button" class="btn small" data-act="eat" data-k="${it.k}" data-n="${n}">Comí ${n}</button>`; })() : ''}
         <button type="button" class="link" data-act="remove" data-k="${it.k}">Quitar</button>
       </div>
       ${haveLine(r, it)}
@@ -314,7 +316,16 @@ function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r);
   if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { deduct(r, 1, it.opc); it.veces -= 1; }
   if (t) S.eaten[t] = (S.eaten[t] || 0) + 1;
+  logMeal(t);
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
+}
+function logMeal(t) { S.log = (S.log || []).filter(x => Date.now() - x.ts < 8 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour() }); }
+function mealByHour(d = new Date()) { const h = d.getHours() + d.getMinutes() / 60; return h >= 5 && h < 11.5 ? 'desayuno' : h < 16.5 ? 'almuerzo' : h < 19.5 ? 'merienda' : 'cena'; }
+function enjoyed(n, r) {
+  if (S.enjoyPopup === false) return toast(`Anotado: ${n} ${n === 1 ? 'ración' : 'raciones'} de ${r.n}`);
+  const m = mealByHour();
+  $('#pop-in').innerHTML = `<div class="pop-emoji" aria-hidden="true">🍽️</div><h2>¡Que aproveche${S.name ? ', ' + esc(S.name) : ''}!</h2><p>Espero que hayas disfrutado tu ${m}.</p><p class="small muted">Anotado: ${n} ${n === 1 ? 'ración' : 'raciones'} de ${esc(r.n)}.</p><button type="button" class="btn wide" data-close>Gracias</button><label class="toggle" style="justify-content:center"><input type="checkbox" id="pop-off"> No volver a mostrar</label>`;
+  $('#dlg-pop').showModal();
 }
 function cook(it) { const r = byId(it.rid); deduct(r, it.veces, it.opc); it.cocinado = true; it.comidos = it.comidos || 0; }
 
@@ -333,7 +344,12 @@ document.addEventListener('click', ev => {
   else if (a === 'veces' && it) { const nv = Math.min(30, it.veces + Number(b.dataset.d)); if (nv < 1) S.plan = S.plan.filter(p => p !== it); else it.veces = nv; }
   else if (a === 'remove' && it) S.plan = S.plan.filter(p => p !== it);
   else if (a === 'cook' && it) { cook(it); toast('Cocinado: ' + byId(it.rid).n + '. Despensa actualizada'); }
-  else if (a === 'eat' && it) { eatOne(it); toast('Anotado: 1 ración de ' + byId(it.rid).n); }
+  else if (a === 'eatn' && it) { eatN[it.k] = Math.max(1, Math.min(Math.max(1, leftOf(it)), (eatN[it.k] || 1) + Number(b.dataset.d))); renderSemana(); return; }
+  else if (a === 'eat' && it) {
+    const r = byId(it.rid); const n = Math.max(1, Math.min(Number(b.dataset.n) || 1, Math.max(1, leftOf(it))));
+    for (let i = 0; i < n && S.plan.includes(it); i++) eatOne(it);
+    delete eatN[it.k]; render(); return enjoyed(n, r);
+  }
   else if (a === 'mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); }
   else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
   else if (a === 'inv-add') { const n = $('#inv-prod').value; const q = Number($('#inv-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); S.invSel = n; toast(`Añadido: ${fmtQ(q, S.P[n].u)} de ${n}`); }
@@ -374,6 +390,11 @@ function openSettings() {
     </div>
     <p class="small muted" style="margin:0">Comidas a cubrir por semana</p>
     <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${MEALS.map(([k, l]) => `<label class="field">${l}<input id="st-t-${k}" type="number" min="0" max="21" value="${S.target[k]}"></label>`).join('')}</div>
+    <h3 style="font-size:16px;margin-top:6px">Avisos</h3>
+    <label class="toggle"><input type="checkbox" id="st-enjoy" ${S.enjoyPopup !== false ? 'checked' : ''}> Mensaje de «que aproveche» al anotar lo que comes</label>
+    <label class="toggle"><input type="checkbox" id="st-remind" ${S.remind.on ? 'checked' : ''}> Recordarme comer si no he anotado la comida</label>
+    <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${REM.map(([k, , l]) => `<label class="field">${l}<input id="st-r-${k}" type="time" value="${S.remind[k]}"></label>`).join('')}</div>
+    <p class="small muted" style="margin:0">Te avisa a esas horas solo si aún no has pulsado «Comí» en esa comida. Con la app cerrada, el móvil decide cuándo la deja comprobar, así que algún aviso puede llegar con retraso.</p>
     <h3 style="font-size:16px;margin-top:6px">Inteligencia artificial</h3>
     ${PROXY ? `<label class="field">Código de invitación<input id="st-code" autocomplete="off" autocapitalize="none" placeholder="El que te pasaron con el enlace" value="${esc(S.code)}"></label>` : ''}
     <label class="field">${PROXY ? 'Clave de API propia (opcional)' : 'Clave de API de Anthropic'}<input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(S.apiKey)}"></label>
@@ -397,6 +418,9 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value);
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
+    S.enjoyPopup = $('#st-enjoy').checked;
+    const wasOn = S.remind.on; S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
+    if (S.remind.on && !wasOn) enableReminders();
     const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); toast(`Precios de referencia de ${REG().name}`); }
     S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
@@ -579,7 +603,7 @@ for (const id of ['#file-cam', '#file-gal']) $(id).addEventListener('change', ev
 /* ---------- Asistente ---------- */
 const AI_TOOLS = [
   { name: 'ajustar_despensa', description: 'Cambia la cantidad de un producto de la despensa.', input_schema: { type: 'object', required: ['producto', 'cantidad', 'modo'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto (g, ml o ud)' }, modo: { type: 'string', enum: ['sumar', 'restar', 'fijar'] } } } },
-  { name: 'crear_producto', description: 'Crea un producto nuevo en el catálogo.', input_schema: { type: 'object', required: ['nombre', 'unidad', 'formato', 'precio', 'cantidad_formato', 'categoria'], properties: { nombre: { type: 'string' }, unidad: { type: 'string', enum: ['g', 'ml', 'ud'] }, formato: { type: 'string', description: 'Ej.: Paquete 500 g' }, precio: { type: 'number', description: 'Precio del formato en euros' }, cantidad_formato: { type: 'number' }, categoria: { type: 'string' }, cantidad_en_casa: { type: 'number' } } } },
+  { name: 'crear_producto', description: 'Crea un producto nuevo en el catálogo.', input_schema: { type: 'object', required: ['nombre', 'unidad', 'formato', 'precio', 'cantidad_formato', 'categoria'], properties: { nombre: { type: 'string' }, unidad: { type: 'string', enum: ['g', 'ml', 'ud'] }, formato: { type: 'string', description: 'Ej.: Paquete 500 g' }, precio: { type: 'number', description: 'Precio del formato en la moneda del usuario' }, cantidad_formato: { type: 'number' }, categoria: { type: 'string' }, cantidad_en_casa: { type: 'number' } } } },
   { name: 'anadir_a_semana', description: 'Añade platos de una receta al menú de la semana.', input_schema: { type: 'object', required: ['receta_id', 'platos'], properties: { receta_id: { type: 'string' }, platos: { type: 'integer', minimum: 1 } } } },
   { name: 'quitar_de_semana', description: 'Quita una receta del menú de la semana.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' } } } },
   { name: 'anotar_comida', description: 'Anota que el usuario se comió raciones de una receta. Descuenta de lo cocinado o, si era al momento, de la despensa.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' }, raciones: { type: 'integer', minimum: 1 } } } },
@@ -607,7 +631,7 @@ function runTool(name, x) {
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
   if (name === 'anotar_comida') {
     const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const n = x.raciones || 1;
-    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; } }
+    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t); } }
     return `OK. Anotadas ${n} raciones de ${r.n}.`;
   }
   if (name === 'marcar_cocinado') { const r = findR(x.receta_id); const it = r && S.plan.find(p => p.rid === r.id && !p.cocinado); if (!it) return 'Error: esa receta no está pendiente en la semana.'; cook(it); return `OK. ${r.n} cocinado; despensa descontada.`; }
@@ -615,10 +639,12 @@ function runTool(name, x) {
   if (name === 'gestionar_recetario') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; if (x.accion === 'anadir') { if (!S.mine.includes(r.id)) S.mine.push(r.id); } else S.mine = S.mine.filter(i => i !== r.id); return `OK. ${r.n} ${x.accion === 'anadir' ? 'añadida a' : 'quitada de'} Mi recetario.`; }
   if (name === 'crear_receta') {
     const bad = x.ingredientes.filter(g => !S.P[g.producto]).map(g => g.producto); if (bad.length) return `Error: estos productos no existen en el catálogo: ${bad.join(', ')}. Créalos primero con crear_producto.`;
+    const old = S.R.find(r => r.n.trim().toLowerCase() === x.nombre.trim().toLowerCase());
+    if (old) { Object.assign(old, { tipos: x.tipos, rac: x.raciones, tanda: x.apta_tanda ? 1 : 0, i: x.ingredientes.map(g => g.opcional ? [g.producto, g.cantidad, 1] : [g.producto, g.cantidad]) }); S.STEPS[old.id] = x.pasos; if (!S.mine.includes(old.id)) S.mine.push(old.id); return `OK. Receta "${old.n}" actualizada. Coste por ración: ${eur(perRacion(old, false))}.`; }
     let id = x.nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'receta'; while (byId(id)) id += '-2';
     S.R.push({ id, n: x.nombre, tipos: x.tipos, rac: x.raciones, tanda: x.apta_tanda ? 1 : 0, i: x.ingredientes.map(g => g.opcional ? [g.producto, g.cantidad, 1] : [g.producto, g.cantidad]) });
     for (const g of x.ingredientes) if (g.kcal_por_unidad && S.K[g.producto] === undefined) S.K[g.producto] = g.kcal_por_unidad;
-    S.STEPS[id] = x.pasos; S.mine.push(id); return `OK. Receta "${x.nombre}" creada con id ${id}.`;
+    S.STEPS[id] = x.pasos; S.mine.push(id); return `OK. Receta "${x.nombre}" creada con id ${id}. Coste por ración: ${eur(perRacion(byId(id), false))}.`;
   }
   return 'Herramienta desconocida.';
 }
@@ -635,6 +661,7 @@ Cómo hablas:
 - No empieces con "¡Claro!", "¡Perfecto!", "Entendido" ni similares, no repitas lo que te ha dicho, no expliques qué herramientas usas y no ofrezcas más ayuda al final.
 - Si algo es ambiguo, haz la suposición más razonable (por ejemplo, "un poco" de una salsa son unos 10 g) y menciónala de pasada.
 Usa siempre los nombres exactos del catálogo y los id de receta en las herramientas, pero al hablar usa nombres normales.
+Recetas nuevas: si te cuenta una receta suya o te pide añadir una, guárdala con crear_receta sin pedir permiso. Si falta algún ingrediente en el catálogo, créalo antes con crear_producto (formato típico del súper y precio estimado en su moneda). Cantidades para toda la receta, en la unidad del producto. Si no dice raciones, pon 1 en desayunos y cenas al momento y 5 en tandas de almuerzo. Pasos cortos y claros. Si cambia algo de una receta ya creada, crea la versión nueva con el mismo nombre. Al terminar, confirma en una frase con el nombre, las raciones y lo que cuesta más o menos cada ración.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
 País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
 Despensa: ${stock || 'vacía'}.
@@ -698,6 +725,48 @@ $('#dlg-ai').addEventListener('click', ev => {
 $('#dlg-ai').addEventListener('submit', ev => { ev.preventDefault(); const i = $('#chat-text'); const v = i.value; i.value = ''; sendAI(v); });
 for (const d of ['#dlg-settings', '#dlg-scan', '#dlg-ai']) $(d).addEventListener('click', ev => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
 
+/* ---------- Recordatorios ---------- */
+const REM = [
+  ['desayuno', 'No te olvides de la comida más importante del día, prepárate tu desayuno', 'Desayuno'],
+  ['almuerzo', 'No te olvides de almorzar, es importante para tu salud', 'Almuerzo'],
+  ['cena', 'No te olvides de cenar, también es importante para que duermas bien!', 'Cena']
+];
+const dayKey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+function dueReminders(now = new Date()) {
+  if (!S.remind || !S.remind.on) return [];
+  return REM.filter(([t]) => {
+    const [h, m] = String(S.remind[t] || '').split(':').map(Number); if (isNaN(h)) return false;
+    const at = new Date(now); at.setHours(h, m || 0, 0, 0);
+    const ate = (S.log || []).some(x => x.t === t && dayKey(new Date(x.ts)) === dayKey(now));
+    return now >= at && now - at < 3 * 36e5 && !ate && S.remind.sent[t] !== dayKey(now);
+  });
+}
+async function notify(t, msg) {
+  try { if ('Notification' in window && Notification.permission === 'granted') { const reg = await navigator.serviceWorker.ready; await reg.showNotification('Tandas', { body: msg, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'tandas-' + t }); return true; } } catch (e) {}
+  return false;
+}
+async function checkReminders() {
+  await mergeSwSent();
+  for (const [t, msg] of dueReminders()) {
+    S.remind.sent[t] = dayKey(new Date()); save();
+    if (document.hidden) notify(t, msg); else toast(msg);
+  }
+}
+async function mirrorState() {
+  try { const c = await caches.open('tandas-state'); await c.put('state', new Response(JSON.stringify({ remind: S.remind, log: S.log || [] }))); } catch (e) {}
+}
+async function mergeSwSent() {
+  try { const c = await caches.open('tandas-state'); const r = await c.match('swsent'); if (!r) return; const d = await r.json(); for (const k in d) if (d[k]) S.remind.sent[k] = d[k]; } catch (e) {}
+}
+async function enableReminders() {
+  try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
+  if ('Notification' in window && Notification.permission === 'denied') toast('Las notificaciones están bloqueadas: actívalas en los ajustes del móvil para Tandas');
+  try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.register('tandas-recordatorio', { minInterval: 60 * 60 * 1000 }); } catch (e) {}
+  mirrorState();
+}
+setInterval(checkReminders, 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); else mirrorState(); });
+
 /* ---------- Bienvenida ---------- */
 function openWelcome() {
   $('#welcome-in').innerHTML = `
@@ -722,6 +791,12 @@ $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
 /* ---------- Arranque ---------- */
 render();
 if (!S.name) openWelcome();
+checkReminders(); mirrorState();
+$('#dlg-pop').addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b && ev.target !== ev.currentTarget) return;
+  const off = $('#pop-off'); if (off && off.checked) { S.enjoyPopup = false; save(); toast('Vale, no te lo vuelvo a mostrar. Puedes reactivarlo en Ajustes'); }
+  $('#dlg-pop').close();
+});
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { reg.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); }); }).catch(() => {});
