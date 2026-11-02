@@ -63,7 +63,11 @@
     </section>
 
     <section id="v-despensa" class="view" hidden>
-      <p class="lead">Lo que tienes en casa. Cambia cantidades a mano, añade productos o díselo al asistente.</p>
+      <div class="segctl" role="group" aria-label="Despensa">
+        <button type="button" id="seg-food" aria-pressed="true">Comida</button>
+        <button type="button" id="seg-home" aria-pressed="false">Hogar</button>
+      </div>
+      <p class="lead" id="desp-lead" style="margin-top:12px">Lo que tienes en casa para comer.</p>
       <div class="box" id="inv-list" style="margin-top:12px"></div>
     </section>
   </div>
