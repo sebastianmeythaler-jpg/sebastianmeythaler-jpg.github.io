@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.2 · 2 nov';
+const VERSION = '1.3 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -352,12 +352,31 @@ function eatSnack(n, q) {
   const p = S.P[n]; if (!p || !(q > 0)) return null; const have = S.stock[n] || 0; const used = Math.min(q, have || q);
   const left = have - q; if (left > 1e-6) S.stock[n] = r2(left); else delete S.stock[n];
   const c = r2(used * ucost(p)); S.snacks = (S.snacks || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.snacks.push({ ts: Date.now(), n, q, c });
-  logMeal('snack'); return c;
+  logMeal('snack', `${n} (${fmtQ(q, p.u)})`, c); return c;
+}
+const MEAL_LABEL = { desayuno: 'Desayuno', almuerzo: 'Almuerzo', merienda: 'Merienda', cena: 'Cena', snack: 'Snack' };
+function renderEaten() {
+  const { start, end } = weekRange(); const week = (S.log || []).filter(x => x.ts >= start.getTime() && x.ts < end.getTime());
+  const total = week.reduce((a, x) => a + (x.c || 0), 0);
+  $('#s-consumo').textContent = eur(total);
+  const btn = $('#btn-eaten'); btn.setAttribute('aria-expanded', S.eatenOpen ? 'true' : 'false');
+  const el = $('#eaten-panel'); el.hidden = !S.eatenOpen; if (!S.eatenOpen) return;
+  if (!week.length) { el.innerHTML = '<div class="empty" style="border:0">Aún no has anotado nada esta semana. Pulsa «Comí» en un plato o apunta un snack y aparecerá aquí.</div>'; return; }
+  const days = new Map();
+  for (const x of week.slice().sort((a, b) => b.ts - a.ts)) {
+    const d = new Date(x.ts); const key = dayKey(d); if (!days.has(key)) days.set(key, { d, rows: [] });
+    const rows = days.get(key).rows; const same = rows.find(r => r.t === x.t && r.n === x.n);
+    if (same) { same.k++; same.c += x.c || 0; } else rows.push({ t: x.t, n: x.n, k: 1, c: x.c || 0 });
+  }
+  el.innerHTML = `<div class="gh" style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"><span>Lo que has comido esta semana</span><span class="num">${eur(total)}</span></div>` +
+    [...days.values()].map(({ d, rows }) => `<div class="eat-day"><div class="eat-dh">${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/^./, c => c.toUpperCase())}</div>${rows.map(r => `<div class="eat-r"><span class="tag">${MEAL_LABEL[r.t] || r.t}</span><span class="eat-n">${r.n ? esc(r.n) : '<span class="muted">sin detalle</span>'}${r.k > 1 ? ` <b>×${r.k}</b>` : ''}</span><span class="num small">${eur(r.c)}</span></div>`).join('')}</div>`).join('') +
+    `<p class="small muted" style="margin:8px 0 0">Coste según el precio de los ingredientes. ${week.some(x => !x.n) ? 'Lo anotado antes de esta versión sale sin detalle.' : ''}</p>`;
 }
 function renderSemana() {
   renderSnacks();
   const s = shop(S.plan); const e = eq();
-  $('#s-consumo').textContent = eur(s.consumo); $('#s-compra').textContent = eur(s.total); $('#s-sobra').textContent = eur(s.sobra);
+  renderEaten();
+  $('#s-compra').textContent = eur(s.total); $('#s-sobra').textContent = eur(s.sobra);
   const el = $('#plan-list');
   if (!S.plan.length) { el.innerHTML = '<div class="empty">Tu semana está vacía. Añade platos con el botón + del recetario.</div>'; return; }
   el.innerHTML = S.plan.map(it => {
@@ -461,11 +480,11 @@ function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
   if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { deduct(r, 1, it.opc); it.veces -= 1; }
   if (t && t !== 'snack') S.eaten[t] = (S.eaten[t] || 0) + 1;
-  logMeal(t);
+  logMeal(t, r.n, perRacion(r, it.opc));
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
 }
-function logMeal(t) {
-  S.log = (S.log || []).filter(x => Date.now() - x.ts < 8 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour() });
+function logMeal(t, n, c) {
+  S.log = (S.log || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour(), n: n || '', c: r2(c || 0) });
   if (S.pushId && t && PROXY) pushPost('push/comi', { id: S.pushId, comida: t }).catch(() => {});
 }
 function mealByHour(d = new Date()) { const h = d.getHours() + d.getMinutes() / 60; return h >= 5 && h < 11.5 ? 'desayuno' : h < 16.5 ? 'almuerzo' : h < 19.5 ? 'merienda' : 'cena'; }
@@ -484,6 +503,7 @@ document.addEventListener('click', ev => {
   if (b.id === 'btn-scan') return openScan();
   if (b.id === 'btn-ai') return openAI();
   if (b.dataset.view) { setView(b.dataset.view); save(); window.scrollTo({ top: 0 }); return; }
+  if (b.id === 'btn-eaten') { S.eatenOpen = !S.eatenOpen; renderEaten(); save(); return; }
   if (b.id === 'seg-food' || b.id === 'seg-home') { S.invSeg = b.id === 'seg-home' ? 'home' : 'food'; render(); return; }
   if (b.id === 'seg-mine' || b.id === 'seg-explore') { S.seg = b.id === 'seg-mine' ? 'mine' : 'explore'; render(); return; }
   const a = b.dataset.act; if (!a) return;
@@ -818,7 +838,7 @@ function runTool(name, x) {
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
   if (name === 'anotar_comida') {
     const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const n = x.raciones || 1;
-    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t); } }
+    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t, r.n, perRacion(r, false)); } }
     return `OK. Anotadas ${n} raciones de ${r.n}.`;
   }
   if (name === 'marcar_cocinado') { const r = findR(x.receta_id); const it = r && S.plan.find(p => p.rid === r.id && !p.cocinado); if (!it) return 'Error: esa receta no está pendiente en la semana.'; cook(it); return `OK. ${r.n} cocinado; despensa descontada.`; }

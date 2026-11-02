@@ -232,3 +232,13 @@ dialog.pop[open]{animation:pop .3s cubic-bezier(.3,1.5,.5,1)}
 .snack-list li{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px}
 :root[data-theme="confianza"] .fab{box-shadow:0 10px 24px rgba(46,111,216,.3)}
 :root[data-theme="fresco"] .fab{box-shadow:0 10px 24px rgba(15,106,75,.3)}
+
+/* Lo que comes: desplegable */
+.stat-btn{text-align:left;cursor:pointer;color:inherit;font:inherit}
+.stat-btn i{font-style:normal;display:inline-block;transition:transform .2s}
+.stat-btn[aria-expanded="true"]{border-color:var(--accent)} .stat-btn[aria-expanded="true"] i{transform:rotate(180deg)}
+.eaten-panel{padding:12px}
+.eat-day{border-top:1px solid var(--line);padding:8px 0 4px}
+.eat-dh{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.eat-r{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:3px 0;font-size:14px}
+.eat-r .tag{font-size:11px}

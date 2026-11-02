@@ -49,10 +49,11 @@
     <section id="v-semana" class="view" hidden>
       <p class="lead">Ajusta los platos de la semana. Marca «Ya lo cociné» cuando prepares una tanda y «Comí» cuando te comas una o varias raciones.</p>
       <div class="stats" style="margin-top:12px">
-        <div class="stat"><span>Lo que comes</span><b id="s-consumo"></b></div>
+        <button type="button" class="stat stat-btn" id="btn-eaten" aria-expanded="false" aria-controls="eaten-panel"><span>Lo que comes <i aria-hidden="true">▾</i></span><b id="s-consumo"></b></button>
         <div class="stat"><span>Por comprar</span><b id="s-compra"></b></div>
         <div class="stat"><span>Sobra</span><b id="s-sobra"></b></div>
       </div>
+      <div class="box eaten-panel" id="eaten-panel" hidden style="margin-top:8px"></div>
       <section class="card" id="snack-box" aria-label="Snacks y picoteo" style="margin-top:12px"></section>
       <div class="list" id="plan-list" style="margin-top:12px"></div>
     </section>
