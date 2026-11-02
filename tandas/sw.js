@@ -1,5 +1,5 @@
 /* Service worker de Tandas: la app funciona sin conexión y se actualiza sola cuando hay internet. */
-const CACHE = 'tandas-v8';
+const CACHE = 'tandas-v9';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'data.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== 'tandas-state').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -24,7 +24,7 @@ const REM = [
 const dayKey = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 async function remindFromSW() {
   const c = await caches.open('tandas-state'); const r = await c.match('state'); if (!r) return;
-  const { remind, log } = await r.json(); if (!remind || !remind.on) return;
+  const { remind, log, push } = await r.json(); if (!remind || !remind.on || push) return;
   const sr = await c.match('swsent'); const swsent = sr ? await sr.json() : {};
   const now = new Date();
   for (const [t, msg] of REM) {
@@ -43,4 +43,10 @@ self.addEventListener('periodicsync', e => { if (e.tag === 'tandas-recordatorio'
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => cs.length ? cs[0].focus() : self.clients.openWindow('./')));
+});
+
+/* Recordatorios enviados por el servidor (push): llegan aunque la app esté cerrada, también en iPhone */
+self.addEventListener('push', e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Tandas', { body: d.body || '', tag: d.tag || 'tandas', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' }));
 });

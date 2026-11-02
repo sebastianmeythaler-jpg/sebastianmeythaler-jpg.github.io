@@ -3,9 +3,11 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '0.8 · 2 nov';
+const VERSION = '0.9 · 2 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = '';
+// Clave pública para las notificaciones push (la privada solo está en el servidor)
+const VAPID_PUBLIC = 'BK6wCotgiH0r1SD907MJtCYOtXbIHCXuTNfP3VEgr3F-W3zLJC3G6pTVGyqG_AW1JU_BxZOogqmggS4El7cRorA';
 const aiReady = () => !!(S.apiKey || (PROXY && S.code));
 const MODELS = [['claude-haiku-5-5', 'Haiku (rápido y económico)'], ['claude-sonnet-5-5', 'Sonnet (más preciso)']];
 const EXTRA_GROUPS = ['Dulces y antojos', 'Desayunos', 'Fiambres para clase', 'Salsas', 'Bebidas', 'Otros'];
@@ -319,7 +321,10 @@ function eatOne(it) {
   logMeal(t);
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
 }
-function logMeal(t) { S.log = (S.log || []).filter(x => Date.now() - x.ts < 8 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour() }); }
+function logMeal(t) {
+  S.log = (S.log || []).filter(x => Date.now() - x.ts < 8 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour() });
+  if (S.pushId && t && PROXY) pushPost('push/comi', { id: S.pushId, comida: t }).catch(() => {});
+}
 function mealByHour(d = new Date()) { const h = d.getHours() + d.getMinutes() / 60; return h >= 5 && h < 11.5 ? 'desayuno' : h < 16.5 ? 'almuerzo' : h < 19.5 ? 'merienda' : 'cena'; }
 function enjoyed(n, r) {
   if (S.enjoyPopup === false) return toast(`Anotado: ${n} ${n === 1 ? 'ración' : 'raciones'} de ${r.n}`);
@@ -394,7 +399,8 @@ function openSettings() {
     <label class="toggle"><input type="checkbox" id="st-enjoy" ${S.enjoyPopup !== false ? 'checked' : ''}> Mensaje de «que aproveche» al anotar lo que comes</label>
     <label class="toggle"><input type="checkbox" id="st-remind" ${S.remind.on ? 'checked' : ''}> Recordarme comer si no he anotado la comida</label>
     <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${REM.map(([k, , l]) => `<label class="field">${l}<input id="st-r-${k}" type="time" value="${S.remind[k]}"></label>`).join('')}</div>
-    <p class="small muted" style="margin:0">Te avisa a esas horas solo si aún no has pulsado «Comí» en esa comida. Con la app cerrada, el móvil decide cuándo la deja comprobar, así que algún aviso puede llegar con retraso.</p>
+    <p class="small muted" style="margin:0">Te avisa a esas horas solo si aún no has pulsado «Comí» en esa comida. ${S.pushId ? 'Los avisos llegan aunque la app esté cerrada.' : PROXY ? 'Para que lleguen con la app cerrada, pon tu código de invitación. En iPhone, la app tiene que estar añadida a la pantalla de inicio.' : 'Con la app cerrada, el móvil decide cuándo la deja comprobar, así que algún aviso puede llegar con retraso.'}</p>
+    ${S.pushId ? '<button type="button" class="btn ghost small" id="st-test-push" style="justify-self:start">Enviarme un aviso de prueba</button>' : ''}
     <h3 style="font-size:16px;margin-top:6px">Inteligencia artificial</h3>
     ${PROXY ? `<label class="field">Código de invitación<input id="st-code" autocomplete="off" autocapitalize="none" placeholder="El que te pasaron con el enlace" value="${esc(S.code)}"></label>` : ''}
     <label class="field">${PROXY ? 'Clave de API propia (opcional)' : 'Clave de API de Anthropic'}<input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(S.apiKey)}"></label>
@@ -419,16 +425,18 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
     S.enjoyPopup = $('#st-enjoy').checked;
-    const wasOn = S.remind.on; S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
-    if (S.remind.on && !wasOn) enableReminders();
+    const wasOn = S.remind.on, oldT = REM.map(([k]) => S.remind[k]).join(); S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
+    if (S.remind.on && (!wasOn || oldT !== REM.map(([k]) => S.remind[k]).join())) enableReminders(); else if (!S.remind.on && wasOn) disablePush();
     const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); toast(`Precios de referencia de ${REG().name}`); }
-    S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim(); S.model = $('#st-model').value;
+    S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim();
+    if (S.remind.on && wasOn && !S.pushId && canPush()) enableReminders(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
   } else if (b.id === 'st-export') {
     const data = { ...S, apiKey: '', code: '' }; const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tandas-copia-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Copia descargada (sin tu clave de API)');
   } else if (b.id === 'st-import') $('#file-backup').click();
+  else if (b.id === 'st-test-push') { try { const r = await pushPost('push/prueba', { id: S.pushId }); toast(r.ok ? 'Aviso enviado: te llegará en unos segundos' : 'No llegó el aviso. Desactiva y activa los recordatorios'); } catch (e) { toast('Sin conexión con el servidor'); } }
   else if (b.id === 'st-install' && installEvt) { installEvt.prompt(); installEvt = null; }
   else if (b.id === 'st-reset') {
     if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = 'Pulsa otra vez para borrarlo todo'; return; }
@@ -447,7 +455,7 @@ async function claude(body) {
   const direct = !!S.apiKey;
   let res;
   try {
-    res = await fetch(direct ? 'https://api.anthropic.com/v1/messages' : PROXY, {
+    res = await fetch(direct ? 'https://api.anthropic.com/v1/messages' : PROXY + 'ia', {
       method: 'POST',
       headers: direct ? { 'content-type': 'application/json', 'x-api-key': S.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } : { 'content-type': 'application/json', 'x-tandas-code': S.code },
       body: JSON.stringify({ model: S.model, max_tokens: 2000, ...body })
@@ -746,6 +754,7 @@ async function notify(t, msg) {
   return false;
 }
 async function checkReminders() {
+  if (S.pushId) return; // los manda el servidor
   await mergeSwSent();
   for (const [t, msg] of dueReminders()) {
     S.remind.sent[t] = dayKey(new Date()); save();
@@ -753,14 +762,34 @@ async function checkReminders() {
   }
 }
 async function mirrorState() {
-  try { const c = await caches.open('tandas-state'); await c.put('state', new Response(JSON.stringify({ remind: S.remind, log: S.log || [] }))); } catch (e) {}
+  try { const c = await caches.open('tandas-state'); await c.put('state', new Response(JSON.stringify({ remind: S.remind, log: S.log || [], push: !!S.pushId }))); } catch (e) {}
 }
 async function mergeSwSent() {
   try { const c = await caches.open('tandas-state'); const r = await c.match('swsent'); if (!r) return; const d = await r.json(); for (const k in d) if (d[k]) S.remind.sent[k] = d[k]; } catch (e) {}
 }
+const canPush = () => !!(PROXY && S.code && 'serviceWorker' in navigator && 'PushManager' in window);
+function pushPost(path, body) { return fetch(PROXY + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tandas-code': S.code || '' }, body: JSON.stringify(body) }).then(r => r.json()); }
+async function enablePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(VAPID_PUBLIC.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)) });
+  const t = {}; for (const [k] of REM) t[k] = S.remind[k];
+  const r = await pushPost('push/alta', { sub: sub.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, t });
+  if (!r.ok) throw new Error((r.error && r.error.message) || 'No se pudieron activar los avisos');
+  S.pushId = r.id; save();
+  const today = dayKey(new Date());
+  for (const [k] of REM) if ((S.log || []).some(x => x.t === k && dayKey(new Date(x.ts)) === today)) pushPost('push/comi', { id: r.id, comida: k }).catch(() => {});
+  return true;
+}
+async function disablePush() {
+  const id = S.pushId; S.pushId = null; save();
+  try { if (id) await pushPost('push/baja', { id }); const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) {}
+}
 async function enableReminders() {
   try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
-  if ('Notification' in window && Notification.permission === 'denied') toast('Las notificaciones están bloqueadas: actívalas en los ajustes del móvil para Tandas');
+  if ('Notification' in window && Notification.permission === 'denied') return toast('Las notificaciones están bloqueadas: actívalas en los ajustes del móvil para Tandas');
+  if ('Notification' in window && Notification.permission === 'granted' && canPush()) {
+    try { await enablePush(); toast('Recordatorios activados'); } catch (e) { toast('No pude activar los avisos: ' + e.message); }
+  }
   try { const reg = await navigator.serviceWorker.ready; if (reg.periodicSync) await reg.periodicSync.register('tandas-recordatorio', { minInterval: 60 * 60 * 1000 }); } catch (e) {}
   mirrorState();
 }
