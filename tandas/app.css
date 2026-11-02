@@ -197,3 +197,38 @@ dialog.pop[open]{animation:pop .3s cubic-bezier(.3,1.5,.5,1)}
 .pop-emoji{font-size:40px;line-height:1}
 .stepper.sm button{width:34px;height:34px;font-size:16px}
 @media (prefers-reduced-motion:reduce){dialog.pop[open]{animation:none}}
+
+/* ---------- Temas (versión profesional) ---------- */
+.icon-btn{color:var(--ink)} .icon-btn.ai{color:var(--accent)} .fab{color:var(--accent-ink)}
+:root[data-theme="confianza"]{
+  --bg:#F4F6FA; --card:#FFFFFF; --card2:#EDF1F6; --line:#E1E7EF; --ink:#0F1E36; --muted:#5E6E86; --dim:#7B8AA0;
+  --accent:#2E6FD8; --accent-ink:#FFFFFF; --ok:#14855A; --ok-bg:#E3F5EC; --warn:#D9473F; --warn-bg:#FCE9E7;
+  --mid:#C98516; --high:#E07A1F; --blue:#1E5BB8;
+  --f:"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono:"Plus Jakarta Sans", system-ui, sans-serif;
+  color-scheme:light;
+}
+:root[data-theme="fresco"]{
+  --bg:#F3F6F2; --card:#FFFFFF; --card2:#E9EFEA; --line:#DCE6DF; --ink:#13261D; --muted:#5A6F64; --dim:#6E8278;
+  --accent:#0F6A4B; --accent-ink:#FFFFFF; --ok:#0F6A4B; --ok-bg:#E1F0E8; --warn:#D9573A; --warn-bg:#FDE3DE;
+  --mid:#C98A12; --high:#E0702F; --blue:#2F6F9F;
+  --f:"Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono:"Sora", system-ui, sans-serif;
+  color-scheme:light;
+}
+:root[data-theme="fresco"] h1,:root[data-theme="fresco"] h2,:root[data-theme="fresco"] h3{font-family:"Sora", var(--f)}
+:root[data-theme="confianza"] dialog.sheet,:root[data-theme="fresco"] dialog.sheet{box-shadow:0 -10px 40px rgba(15,30,54,.18)}
+:root[data-theme="confianza"] .card,:root[data-theme="fresco"] .card{box-shadow:0 1px 2px rgba(15,30,54,.06)}
+
+/* Despensa: resumen y categorías */
+.inv-sum{font-size:14px;color:var(--muted);margin-bottom:8px} .inv-sum b{color:var(--ink);font-size:18px}
+.inv-chips{margin-bottom:12px}
+.inv-g .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--card2);border-radius:999px;padding:1px 8px}
+/* Especias por revisar */
+.cons-box{border:1px dashed var(--mid);border-radius:14px;padding:10px 12px;margin-bottom:12px;display:grid;gap:10px}
+.cons-box .gh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:700}
+.cons-r{display:grid;gap:8px} .cons-r .n{font-weight:600} .cons-r .d{font-size:12px;color:var(--muted)}
+.cons-a{display:flex;gap:8px;flex-wrap:wrap} .cons-a .btn{height:auto;min-height:36px;padding:6px 12px;white-space:normal;text-align:left}
+/* Snacks */
+.snack-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px;font-size:13px}
+.snack-list li{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px}
+:root[data-theme="confianza"] .fab{box-shadow:0 10px 24px rgba(46,111,216,.3)}
+:root[data-theme="fresco"] .fab{box-shadow:0 10px 24px rgba(15,106,75,.3)}

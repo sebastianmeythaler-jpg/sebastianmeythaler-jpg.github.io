@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="app.css">
+<script>try{var t=(JSON.parse(localStorage.getItem("tandas-v1")||"{}").theme)||"grafito";document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body>
 <header class="top">
@@ -20,11 +21,11 @@
     <div class="bar-head">
       <div><small id="hoy"></small><h1>Tu cocina</h1></div>
       <div class="head-actions">
-        <button type="button" class="icon-btn" id="btn-ai" aria-label="Asistente">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#F08A3C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8z"></path><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
+        <button type="button" class="icon-btn ai" id="btn-ai" aria-label="Asistente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8z"></path><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg>
         </button>
         <button type="button" class="icon-btn" id="btn-settings" aria-label="Ajustes">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#F2F1EE" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg>
         </button>
       </div>
     </div>
@@ -46,12 +47,13 @@
     </section>
 
     <section id="v-semana" class="view" hidden>
-      <p class="lead">Ajusta los platos de la semana. Marca «Ya lo cociné» cuando prepares una tanda y «Comí 1» cuando te comas una ración.</p>
+      <p class="lead">Ajusta los platos de la semana. Marca «Ya lo cociné» cuando prepares una tanda y «Comí» cuando te comas una o varias raciones.</p>
       <div class="stats" style="margin-top:12px">
         <div class="stat"><span>Lo que comes</span><b id="s-consumo"></b></div>
         <div class="stat"><span>Por comprar</span><b id="s-compra"></b></div>
         <div class="stat"><span>Sobra</span><b id="s-sobra"></b></div>
       </div>
+      <section class="card" id="snack-box" aria-label="Snacks y picoteo" style="margin-top:12px"></section>
       <div class="list" id="plan-list" style="margin-top:12px"></div>
     </section>
 
@@ -71,7 +73,7 @@
   <div class="wrap">
     <button type="button" class="tab" data-view="recetas" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"></path><path d="M9 9h6M9 13h4"></path></svg>Recetas</button>
     <button type="button" class="tab" data-view="semana"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg>Semana</button>
-    <button type="button" class="fab" id="btn-scan" aria-label="Escanear ticket"><svg viewBox="0 0 24 24" fill="none" stroke="#1A0F08" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"></path><path d="M8 10h8M8 14h5"></path></svg></button>
+    <button type="button" class="fab" id="btn-scan" aria-label="Escanear ticket"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"></path><path d="M8 10h8M8 14h5"></path></svg></button>
     <button type="button" class="tab" data-view="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14l-1.5 11h-11z"></path><path d="M9 7a3 3 0 0 1 6 0"></path></svg>Lista</button>
     <button type="button" class="tab" data-view="despensa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 10h16M10 10v10"></path></svg>Despensa</button>
   </div>
