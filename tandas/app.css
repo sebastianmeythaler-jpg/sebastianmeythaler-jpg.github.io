@@ -242,3 +242,4 @@ dialog.pop[open]{animation:pop .3s cubic-bezier(.3,1.5,.5,1)}
 .eat-dh{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
 .eat-r{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:3px 0;font-size:14px}
 .eat-r .tag{font-size:11px}
+.cart-note{display:grid;gap:8px;padding:12px;border-top:1px solid var(--line)}

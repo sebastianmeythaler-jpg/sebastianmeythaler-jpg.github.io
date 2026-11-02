@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.4 · 3 nov';
+const VERSION = '1.5 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -227,9 +227,26 @@ function spentInfo() {
   return { tk, planned, extras, groups, spent, home };
 }
 function level(pct) { return pct >= 0.99 ? 'lv-over' : pct >= 0.8 ? 'lv-high' : pct >= 0.6 ? 'lv-mid' : 'lv-ok'; }
-function deduct(r, platos, opc) {
-  const e = eq();
-  for (const [n, q, o] of r.i) { if (o && !opc) continue; if (isC(n)) continue; const left = (S.stock[n] || 0) - q / r.rac * platos * e; if (left > 1e-6) S.stock[n] = r2(left); else delete S.stock[n]; }
+// Descuenta de la despensa lo que gasta un plato. Si falta un ingrediente, tira de sus sustitutos (misma unidad)
+// sin tocar lo que reservan otros platos de la semana. Devuelve qué se sustituyó y qué faltó.
+function deduct(r, platos, opc, exclude) {
+  const e = eq(); const used = [], missing = [];
+  const reserved = needs(S.plan.filter(p => p !== exclude));
+  const take = (n, amt) => { const left = (S.stock[n] || 0) - amt; if (left > 1e-6) S.stock[n] = r2(left); else delete S.stock[n]; };
+  for (const [n, q, o] of r.i) {
+    if (o && !opc) continue; if (isC(n) || !S.P[n]) continue;
+    const need = q / r.rac * platos * e; const have = S.stock[n] || 0; const own = Math.min(have, need); take(n, own);
+    let short = need - own; if (short <= 1e-6) continue;
+    const g = S.SUBS.find(x => x.includes(n)) || []; const u = S.P[n].u;
+    for (const sb of g) {
+      if (sb === n || !S.P[sb] || S.P[sb].u !== u) continue;
+      const spare = (S.stock[sb] || 0) - (reserved.get(sb) || 0); if (spare <= 1e-6) continue;
+      const t = Math.min(spare, short); take(sb, t); short -= t; used.push(`${fmtQ(t, u)} de ${sb} en vez de ${n}`);
+      if (short <= 1e-6) break;
+    }
+    if (short > 1e-6) missing.push(`${n} (${fmtQ(short, u)})`);
+  }
+  return { used, missing };
 }
 
 /* ---------- Render: cabecera ---------- */
@@ -298,7 +315,7 @@ function howTo(r, key, veces, k) {
     <h4>Pasos</h4><ol>${(S.STEPS[r.id] || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div></details>`;
 }
 function recipeCard(r, explore) {
-  const it = S.plan.find(p => p.rid === r.id); const hasOpc = r.i.some(x => x[2]);
+  const it = S.plan.find(p => p.rid === r.id && !p.cocinado); const cookedIt = S.plan.find(p => p.rid === r.id && p.cocinado); const hasOpc = r.i.some(x => x[2]);
   const base = shop(S.plan).total; const spent = spentInfo().spent;
   let impact = '';
   if (!explore && r.i.length && !(it && it.cocinado)) {
@@ -309,11 +326,10 @@ function recipeCard(r, explore) {
   let ctrl = '';
   if (explore) ctrl = `<button type="button" class="btn small" data-act="mine" data-id="${r.id}">+ A mi recetario</button>`;
   else if (!r.i.length) ctrl = '';
-  else if (it && it.cocinado) ctrl = `<span class="tag acc">Cocinado · quedan ${leftOf(it)}</span>`;
   else ctrl = `<span class="stepper" role="group" aria-label="Platos de ${esc(r.n)}"><button type="button" ${it ? `data-act="veces" data-k="${it.k}" data-d="-1"` : 'disabled'} aria-label="Un plato menos">−</button><b>${it ? it.veces : 0}</b><button type="button" class="plus" ${it ? `data-act="veces" data-k="${it.k}" data-d="1"` : `data-act="addone" data-id="${r.id}"`} aria-label="Un plato más">+</button></span>`;
   return `<article class="card">
     <div class="card-head"><h3>${esc(r.n)}</h3>${explore ? '' : `<button type="button" class="link" data-act="unmine" data-id="${r.id}">Quitar</button>`}</div>
-    <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc">Apta para tanda</span>' : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
+    <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc">Apta para tanda</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
     <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración · ${kcal(r, false)} kcal</small></div>${ctrl}</div>
     ${it && !explore ? `<div class="small muted">En tu semana: ${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ≈ ${eur(perRacion(r, it.opc) * it.veces * eq())}</div>` : ''}
     ${haveLine(r, explore ? null : it)}
@@ -411,12 +427,13 @@ function renderLista() {
   const s = shop(S.plan); const el = $('#shop-list'); const cb = consBox() + homeBox();
   if (!s.rows.length) { el.innerHTML = cb + '<div class="empty" style="border:0">La lista se llena cuando añades platos a tu semana.</div>'; return; }
   el.innerHTML = cb + s.rows.map((x, i) => {
-    const done = x.packs === 0; const miss = x.need - x.have; const sub = done ? null : subText(x.n, miss);
-    return `<div class="row ${done ? 'done' : ''}">
-      <input type="checkbox" id="sl-${i}" data-act="have" data-n="${esc(x.n)}" data-need="${x.need}" ${done ? 'checked' : ''} aria-label="Ya lo tengo: ${esc(x.n)}">
+    const done = x.packs === 0; const inCart = !done && !!(S.cart || {})[x.n]; const miss = x.need - x.have; const sub = done ? null : subText(x.n, miss);
+    return `<div class="row ${done || inCart ? 'done' : ''}">
+      <input type="checkbox" id="sl-${i}" data-act="cart" data-n="${esc(x.n)}" ${done || inCart ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${done ? 'Ya lo tienes' : 'En el carro'}: ${esc(x.n)}">
       <label for="sl-${i}"><div class="n">${esc(x.n)}</div><div class="d">${x.cons ? (x.packs ? `${S.want[x.n] ? 'Se te acabó' : 'Lo usa tu semana y no tienes'} · compra 1 × ${esc(x.p.f)}` : `Especia · tienes ${x.have} ${x.have === 1 ? 'bote' : 'botes'}, no hace falta comprar`) : `Necesitas ${fmtQ(x.need, x.p.u)}${x.have ? ` · en casa ${fmtQ(x.have, x.p.u)}` : ''}${x.packs ? ` · compra ${x.packs} × ${esc(x.p.f)}` : ' · no hace falta comprar'}`}</div>${sub ? `<div class="d" style="color:var(--ok)">Para ahorrar: ${sub}</div>` : ''}</label>
       <div class="p num">${x.p.t ? '' : '≈ '}${eur(x.cost)}</div></div>`;
-  }).join('') + `<div class="foot"><span>Total a pagar</span><span class="num">≈ ${eur(s.total)}</span></div>`;
+  }).join('') + `<div class="foot"><span>Total a pagar</span><span class="num">≈ ${eur(s.total)}</span></div>` +
+  (s.rows.some(x => x.packs && (S.cart || {})[x.n]) ? `<div class="cart-note"><p class="small muted" style="margin:0">Marcar solo lo pone en el carro. La despensa y el gasto se actualizan al escanear el ticket.</p><button type="button" class="btn small ghost" data-act="cart-stock">No tengo ticket: pasar lo marcado a la despensa</button></div>` : '');
 }
 function renderHogar() {
   const all = Object.keys(S.HP); const have = all.filter(n => (S.hstock[n] || 0) > 0);
@@ -478,7 +495,7 @@ function render() { renderHeader(); renderRecetas(); renderSemana(); renderLista
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
-  if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { deduct(r, 1, it.opc); it.veces -= 1; }
+  if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { lastDeduct = deduct(r, 1, it.opc, it); it.veces -= 1; }
   if (t && t !== 'snack') S.eaten[t] = (S.eaten[t] || 0) + 1;
   logMeal(t, r.n, perRacion(r, it.opc));
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
@@ -494,7 +511,9 @@ function enjoyed(n, r) {
   $('#pop-in').innerHTML = `<div class="pop-emoji" aria-hidden="true">🍽️</div><h2>¡Que aproveche${S.name ? ', ' + esc(S.name) : ''}!</h2><p>Espero que hayas disfrutado tu ${m}.</p><p class="small muted">Anotado: ${n} ${n === 1 ? 'ración' : 'raciones'} de ${esc(r.n)}.</p><button type="button" class="btn wide" data-close>Gracias</button><label class="toggle" style="justify-content:center"><input type="checkbox" id="pop-off"> No volver a mostrar</label>`;
   $('#dlg-pop').showModal();
 }
-function cook(it) { const r = byId(it.rid); deduct(r, it.veces, it.opc); it.cocinado = true; it.comidos = it.comidos || 0; }
+let lastDeduct = null;
+function cook(it) { const r = byId(it.rid); const d = deduct(r, it.veces, it.opc, it); it.cocinado = true; it.comidos = it.comidos || 0; return d; }
+function deductMsg(d) { if (!d) return ''; const parts = []; if (d.used.length) parts.push('Usé ' + d.used.join(', ')); if (d.missing.length) parts.push('No tenías ' + d.missing.join(', ') + ': lo dejo a 0'); return parts.join('. '); }
 
 document.addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
@@ -511,17 +530,23 @@ document.addEventListener('click', ev => {
   if (a === 'filter') { const f = b.dataset.f; S.filter = f === '' ? [] : (S.filter.includes(f) ? S.filter.filter(x => x !== f) : S.filter.concat(f)); }
   else if (a === 'addone') S.plan.push({ k: S.seq++, rid: b.dataset.id, veces: 1, opc: false });
   else if (a === 'veces' && it) { const nv = Math.min(30, it.veces + Number(b.dataset.d)); if (nv < 1) S.plan = S.plan.filter(p => p !== it); else it.veces = nv; }
-  else if (a === 'remove' && it) S.plan = S.plan.filter(p => p !== it);
-  else if (a === 'cook' && it) { cook(it); toast('Cocinado: ' + byId(it.rid).n + '. Despensa actualizada'); }
+  else if (a === 'remove' && it) { if (it.cocinado && leftOf(it) > 0 && b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = `¿Quitar? Se pierden ${leftOf(it)} raciones cocinadas`; return; } S.plan = S.plan.filter(p => p !== it); }
+  else if (a === 'cook' && it) { const m = deductMsg(cook(it)); toast('Cocinado: ' + byId(it.rid).n + '. ' + (m || 'Despensa actualizada')); }
   else if (a === 'eatn' && it) { eatN[it.k] = Math.max(1, Math.min(Math.max(1, leftOf(it)), (eatN[it.k] || 1) + Number(b.dataset.d))); renderSemana(); return; }
   else if (a === 'eat' && it) {
     const r = byId(it.rid); const n = Math.max(1, Math.min(Number(b.dataset.n) || 1, Math.max(1, leftOf(it))));
-    for (let i = 0; i < n && S.plan.includes(it); i++) eatOne(it);
-    delete eatN[it.k]; render(); return enjoyed(n, r);
+    lastDeduct = null; const msgs = [];
+    for (let i = 0; i < n && S.plan.includes(it); i++) { eatOne(it); const m = deductMsg(lastDeduct); if (m) msgs.push(m); lastDeduct = null; }
+    delete eatN[it.k]; render(); if (msgs.length) toast(msgs[msgs.length - 1]); return enjoyed(n, r);
   }
   else if (a === 'mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); }
   else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
   else if (a === 'snack-add') { const n = $('#sn-prod').value; const q = Number($('#sn-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.snackSel = n; const c = eatSnack(n, q); toast(`Anotado: ${fmtQ(q, S.P[n].u)} de ${n} (${eur(c)})`); }
+  else if (a === 'cart-stock') {
+    const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0;
+    for (const x of rows) { S.stock[x.n] = r2((S.stock[x.n] || 0) + x.packs * x.p.q); if (isC(x.n)) { S.since[x.n] = Date.now(); delete S.want[x.n]; delete S.snz[x.n]; } delete S.cart[x.n]; n++; }
+    toast(`${n} ${n === 1 ? 'producto pasado' : 'productos pasados'} a la despensa. Sin ticket no se suma al gasto`);
+  }
   else if (a === 'cons-snz') { S.snz[b.dataset.n] = weekRange().end.getTime(); toast('Vale, te lo vuelvo a recordar en la próxima compra'); }
   else if (a === 'cons-out') { const n = b.dataset.n; delete S.stock[n]; S.want[n] = 1; delete S.snz[n]; toast(`${n} añadido a la lista`); }
   else if (a === 'inv-cat') { S.invCat = b.dataset.c; }
@@ -545,6 +570,7 @@ document.addEventListener('change', ev => {
   else if (t.id === 'sn-prod') { S.snackSel = t.value; $('#sn-unit').textContent = S.P[t.value].u; $('#sn-qty').value = snackDefault(t.value); save(); return; }
   else if (t.id === 'inv-prod') { S.invSel = t.value; const p = S.P[t.value]; $('#inv-unit').textContent = p.u; $('#inv-qty').value = p.u === 'ud' ? 1 : p.q; save(); return; }
   else if (t.dataset.act === 'opc') { const it = S.plan.find(p => String(p.k) === t.dataset.k); if (it) it.opc = t.checked; }
+  else if (t.dataset.act === 'cart') { S.cart = S.cart || {}; if (t.checked) S.cart[t.dataset.n] = 1; else delete S.cart[t.dataset.n]; }
   else if (t.dataset.act === 'have') { const n = t.dataset.n; if (t.checked) { S.stock[n] = Math.max(S.stock[n] || 0, Number(t.dataset.need)); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } } else delete S.stock[n]; }
   else if (t.dataset.act === 'hstock') { const n = t.dataset.n; const v = Math.max(0, Math.round(Number(t.value) || 0)); if (v > 0) { S.hstock[n] = v; delete S.hwant[n]; } else delete S.hstock[n]; }
   else if (t.dataset.act === 'stock') { const n = t.dataset.n; const v = Math.max(0, Number(t.value) || 0); if (isC(n) && v > (S.stock[n] || 0)) { S.since[n] = Date.now(); delete S.snz[n]; } if (v > 0) S.stock[n] = v; else delete S.stock[n]; }
@@ -762,6 +788,7 @@ function saveReview() {
       l.inv = l.inv || l.uds || 1;
     }
     if (prod && S.P[prod]) {
+      if (S.cart) delete S.cart[prod];
       if (l.inv > 0) { S.stock[prod] = r2((S.stock[prod] || 0) + Number(l.inv)); if (isC(prod)) { S.since[prod] = new Date(RV.fecha + 'T12:00').getTime() || Date.now(); delete S.want[prod]; delete S.snz[prod]; } }
       if (l.uds > 0 && l.importe > 0 && S.P[prod].q && l.inv > 0) { const packs = l.inv / S.P[prod].q; if (packs > 0) { S.P[prod].p = r2(l.importe / packs); S.P[prod].t = 1; } }
       S.alias[l.desc.toUpperCase()] = prod;
@@ -843,10 +870,10 @@ function runTool(name, x) {
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
   if (name === 'anotar_comida') {
     const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const n = x.raciones || 1;
-    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t, r.n, perRacion(r, false)); } }
+    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false, null); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t, r.n, perRacion(r, false)); } }
     return `OK. Anotadas ${n} raciones de ${r.n}.`;
   }
-  if (name === 'marcar_cocinado') { const r = findR(x.receta_id); const it = r && S.plan.find(p => p.rid === r.id && !p.cocinado); if (!it) return 'Error: esa receta no está pendiente en la semana.'; cook(it); return `OK. ${r.n} cocinado; despensa descontada.`; }
+  if (name === 'marcar_cocinado') { const r = findR(x.receta_id); const it = r && S.plan.find(p => p.rid === r.id && !p.cocinado); if (!it) return 'Error: esa receta no está pendiente en la semana.'; const m = deductMsg(cook(it)); return `OK. ${r.n} cocinado; despensa descontada.${m ? ' ' + m + '.' : ''}`; }
   if (name === 'cambiar_presupuesto') { S.budget = Math.max(0, x.euros); return `OK. Presupuesto: ${eur(S.budget)}.`; }
   if (name === 'gestionar_recetario') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; if (x.accion === 'anadir') { if (!S.mine.includes(r.id)) S.mine.push(r.id); } else S.mine = S.mine.filter(i => i !== r.id); return `OK. ${r.n} ${x.accion === 'anadir' ? 'añadida a' : 'quitada de'} Mi recetario.`; }
   if (name === 'crear_receta') {
