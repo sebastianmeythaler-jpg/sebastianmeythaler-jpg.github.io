@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.3 · 3 nov';
+const VERSION = '1.4 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -530,7 +530,12 @@ document.addEventListener('click', ev => {
   else if (a === 'home-add') { const n = $('#h-name').value.trim().replace(/^./, c => c.toUpperCase()); const q = Math.max(1, Math.round(Number($('#h-qty').value) || 1)); if (!n) return toast('Escribe el producto'); if (!S.HP[n]) S.HP[n] = { cat: $('#h-cat').value, f: 'Unidad', p: 0, t: 0 }; S.hstock[n] = (S.hstock[n] || 0) + q; delete S.hwant[n]; toast(`Añadido: ${q} × ${n}`); }
   else if (a === 'hbuy') { const n = b.dataset.n; S.hstock[n] = (S.hstock[n] || 0) + 1; delete S.hwant[n]; toast(`${n}: marcado como comprado`); }
   else if (a === 'inv-add') { const n = $('#inv-prod').value; const q = Number($('#inv-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } S.invSel = n; toast(`Añadido: ${fmtQ(q, S.P[n].u)} de ${n}`); }
-  else if (a === 'del-ticket') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Borrar?'; return; } S.tickets = S.tickets.filter(t => t.id !== b.dataset.id); toast('Ticket borrado. La despensa no se ha tocado'); }
+  else if (a === 'del-ticket') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Borrar?'; return; } const tk = S.tickets.find(t => t.id === b.dataset.id); let undone = 0;
+    for (const l of (tk && tk.lineas) || []) {
+      if (l.producto && l.inv > 0 && S.P[l.producto]) { const v = (S.stock[l.producto] || 0) - l.inv; if (v > 1e-6) S.stock[l.producto] = r2(v); else delete S.stock[l.producto]; undone++; }
+      if (l.hogar && l.uds > 0) { const v = (S.hstock[l.hogar] || 0) - l.uds; if (v > 0) S.hstock[l.hogar] = v; else delete S.hstock[l.hogar]; undone++; }
+    }
+    S.tickets = S.tickets.filter(t => t.id !== b.dataset.id); toast(undone ? 'Ticket borrado. También he quitado de la despensa lo que había metido' : 'Ticket borrado. La despensa no se ha tocado (era un ticket antiguo)'); }
   else return;
   render();
 });
@@ -761,7 +766,7 @@ function saveReview() {
       if (l.uds > 0 && l.importe > 0 && S.P[prod].q && l.inv > 0) { const packs = l.inv / S.P[prod].q; if (packs > 0) { S.P[prod].p = r2(l.importe / packs); S.P[prod].t = 1; } }
       S.alias[l.desc.toUpperCase()] = prod;
     }
-    lineas.push({ desc: l.desc, producto: prod, uds: Number(l.uds) || 1, importe: r2(Number(l.importe) || 0), tipo: l.tipo, grupo: l.tipo === 'Extra' ? l.grupo : null });
+    lineas.push({ desc: l.desc, producto: prod, inv: prod && S.P[prod] ? Number(l.inv) || 0 : 0, uds: Number(l.uds) || 1, importe: r2(Number(l.importe) || 0), tipo: l.tipo, grupo: l.tipo === 'Extra' ? l.grupo : null });
   }
   S.tickets.push({ id, fecha: RV.fecha, tienda: RV.tienda || 'Tienda', total: r2(Number(RV.total) || lineas.reduce((a, l) => a + l.importe, 0)), lineas });
   RV = null; $('#dlg-scan').close(); render(); toast('Ticket guardado. Despensa y presupuesto actualizados');
