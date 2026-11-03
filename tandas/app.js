@@ -3,13 +3,13 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.5 · 3 nov';
+const VERSION = '1.6 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
 const VAPID_PUBLIC = 'BK6wCotgiH0r1SD907MJtCYOtXbIHCXuTNfP3VEgr3F-W3zLJC3G6pTVGyqG_AW1JU_BxZOogqmggS4El7cRorA';
 const aiReady = () => !!(S.apiKey || (PROXY && S.code));
-const MODELS = [['claude-haiku-5-5', 'Haiku (rápido y económico)'], ['claude-sonnet-5-5', 'Sonnet (más preciso)']];
+const MODELS = [['claude-sonnet-5-5', 'Sonnet (más preciso, recomendado)'], ['claude-haiku-5-5', 'Haiku (más rápido y económico)']];
 const EXTRA_GROUPS = ['Dulces y antojos', 'Desayunos', 'Fiambres para clase', 'Salsas', 'Bebidas', 'Otros'];
 const MEALS = [['desayuno', 'Desayunos', 'var(--mid)'], ['almuerzo', 'Almuerzos', 'var(--accent)'], ['cena', 'Cenas', 'var(--blue)']];
 const FILTERS = [['desayuno', 'Desayuno'], ['almuerzo', 'Almuerzo'], ['cena', 'Cena'], ['snack', 'Snacks'], ['postre', 'Postre'], ['bebida', 'Bebidas']];
@@ -93,12 +93,12 @@ function buildCats(s) {
 let S = load();
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
-  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
+  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], habits: [], modelV: 1, invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   markCons(seed); buildCats(seed); ensureHome(seed);
   if (!s) return Object.assign(seed, ui);
-  const needCats = s.catsV !== 2;
+  const needCats = s.catsV !== 2; const needModel = !s.modelV;
   for (const k in ui) if (s[k] === undefined) s[k] = ui[k];
   s.remind = Object.assign({}, ui.remind, s.remind); s.remind.sent = s.remind.sent || {};
   for (const k in seed) if (s[k] === undefined) s[k] = seed[k];
@@ -108,6 +108,8 @@ function load() {
   for (const k in seed.STEPS) if (!s.STEPS[k]) s.STEPS[k] = seed.STEPS[k];
   for (const k in seed.K) if (s.K[k] === undefined) s.K[k] = seed.K[k];
   markCons(s); if (needCats) buildCats(s); ensureHome(s);
+  if (needModel) { s.model = 'claude-sonnet-5-5'; s.modelV = 1; }
+  s.habits = s.habits || [];
   return s;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); if (S.remind && S.remind.on) mirrorState(); } catch (e) { toast('No se pudo guardar en este dispositivo'); } }
@@ -830,6 +832,7 @@ const AI_TOOLS = [
   { name: 'ajustar_despensa', description: 'Cambia la cantidad de un producto de la despensa.', input_schema: { type: 'object', required: ['producto', 'cantidad', 'modo'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto (g, ml o ud)' }, modo: { type: 'string', enum: ['sumar', 'restar', 'fijar'] } } } },
   { name: 'crear_producto', description: 'Crea un producto nuevo en el catálogo.', input_schema: { type: 'object', required: ['nombre', 'unidad', 'formato', 'precio', 'cantidad_formato', 'categoria'], properties: { nombre: { type: 'string' }, unidad: { type: 'string', enum: ['g', 'ml', 'ud'] }, formato: { type: 'string', description: 'Ej.: Paquete 500 g' }, precio: { type: 'number', description: 'Precio del formato en la moneda del usuario' }, cantidad_formato: { type: 'number' }, categoria: { type: 'string', enum: NEWCATS.map(c => c[0]) }, consumible: { type: 'boolean', description: 'true para especias, sazonadores y condimentos secos: se cuentan por botes y no se descuentan al cocinar' }, cantidad_en_casa: { type: 'number', description: 'En la unidad del producto; si es consumible, número de botes' } } } },
   { name: 'ajustar_hogar', description: 'Cambia la cantidad de un producto de casa (aseo personal, limpieza, cocina y hogar). Lo crea si no existe. Úsalo para todo lo que no es comida.', input_schema: { type: 'object', required: ['producto', 'cantidad', 'modo'], properties: { producto: { type: 'string', description: 'Nombre corto y genérico, p. ej. Champú' }, cantidad: { type: 'integer', description: 'Unidades' }, modo: { type: 'string', enum: ['sumar', 'restar', 'fijar', 'a_la_lista'] }, categoria: { type: 'string', enum: HCATS } } } },
+  { name: 'recordar_habito', description: 'Guarda una nota corta y estable sobre los hábitos, gustos o rutina de consumo del usuario, para recordarla aunque se borre el chat.', input_schema: { type: 'object', required: ['nota'], properties: { nota: { type: 'string', description: 'Una frase corta, p. ej. "Suele cenar 2 fajas de pavo"' } } } },
   { name: 'anotar_snack', description: 'Anota un snack o picoteo entre horas hecho con un producto de la despensa y lo descuenta.', input_schema: { type: 'object', required: ['producto', 'cantidad'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto' } } } },
   { name: 'anadir_a_semana', description: 'Añade platos de una receta al menú de la semana.', input_schema: { type: 'object', required: ['receta_id', 'platos'], properties: { receta_id: { type: 'string' }, platos: { type: 'integer', minimum: 1 } } } },
   { name: 'quitar_de_semana', description: 'Quita una receta del menú de la semana.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' } } } },
@@ -865,6 +868,7 @@ function runTool(name, x) {
     if (v > 0) { S.hstock[n] = v; delete S.hwant[n]; } else delete S.hstock[n];
     return `OK. ${n}: ${v} en casa.`;
   }
+  if (name === 'recordar_habito') { const t = String(x.nota || '').trim().slice(0, 160); if (!t) return 'Error: nota vacía.'; if ((S.habits || []).some(h => h.t.toLowerCase() === t.toLowerCase())) return 'Ya lo tenía apuntado.'; S.habits = (S.habits || []).concat({ t, ts: Date.now() }).slice(-40); return `OK. Apuntado: ${t}`; }
   if (name === 'anotar_snack') { const p = S.P[x.producto]; if (!p) return `Error: "${x.producto}" no está en el catálogo.`; const c = eatSnack(x.producto, Number(x.cantidad) || 0); return c === null ? 'Error: cantidad no válida.' : `OK. Snack: ${fmtQ(x.cantidad, p.u)} de ${x.producto} (${eur(c)}).`; }
   if (name === 'anadir_a_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const it = S.plan.find(p => p.rid === r.id && !p.cocinado); if (it) it.veces += x.platos; else S.plan.push({ k: S.seq++, rid: r.id, veces: x.platos, opc: false }); if (!S.mine.includes(r.id)) S.mine.push(r.id); return `OK. ${r.n}: +${x.platos} platos en la semana.`; }
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
@@ -887,12 +891,34 @@ function runTool(name, x) {
   }
   return 'Herramienta desconocida.';
 }
+function habitStats() {
+  const since = Date.now() - 30 * 864e5; const log = (S.log || []).filter(x => x.ts >= since && x.n);
+  if (!log.length) return 'Aún no hay suficientes datos de lo que come.';
+  const by = {}; const hours = {};
+  for (const x of log) { const k = `${x.n} (${x.t})`; by[k] = (by[k] || 0) + 1; const h = new Date(x.ts).getHours(); (hours[x.t] = hours[x.t] || []).push(h); }
+  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k} ×${n}`).join('; ');
+  const hrs = Object.entries(hours).map(([t, hs]) => `${t} hacia las ${Math.round(hs.reduce((a, b) => a + b, 0) / hs.length)}h`).join(', ');
+  const days = new Set(log.map(x => dayKey(new Date(x.ts)))).size;
+  return `Últimos 30 días (${days} días con registros): lo que más come: ${top}. Horas habituales: ${hrs}.`;
+}
 function aiContext() {
   const stock = Object.entries(S.stock).map(([n, q]) => `${n}: ${fmtQ(q, S.P[n] ? S.P[n].u : 'ud')}`).join('; ');
   const plan = S.plan.map(p => `${byId(p.rid).n} [${p.rid}] ×${p.veces}${p.cocinado ? ` (cocinado, quedan ${leftOf(p)})` : ''}`).join('; ') || 'vacío';
   const recs = S.R.map(r => `${r.id}: ${r.n} (${r.tipos.join('/')}${S.mine.includes(r.id) ? ', en Mi recetario' : ''})`).join('\n');
   const si = spentInfo(); const pend = shop(S.plan).total;
+  const recent = S.chat.filter(m => (m.r === 'u' || m.r === 'a' || m.r === 't') && !isErr(m)).slice(-9, -1).map(m => (m.r === 'u' ? 'Usuario: ' : m.r === 't' ? 'Hecho: ' : 'Tú: ') + m.t).join('\n');
   return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de ${S.name || 'la persona que usa la app'}.
+REGLA PRINCIPAL: atiende SOLO su último mensaje. La conversación anterior ya está procesada y sus cambios ya están guardados en la despensa: NUNCA repitas una acción de un mensaje anterior. Úsala solo para entender a qué se refiere ("la otra", "eso", "también").
+Precisión (muy importante):
+- Antes de tocar nada, identifica cada producto del catálogo, la cantidad y la operación. "Usé / puse / gasté X" = restar X. "Compré / me han dado X" = sumar X. "Me queda / tengo / hay X" = fijar X. "Me comí N de una receta" = anotar_comida (no restes además sus ingredientes). "Cociné la tanda" = marcar_cocinado.
+- Si dice qué le puso a un plato que se comió (p. ej. "en la faja puse 60 g de champiñones y mostaza"), resta esos ingredientes con ajustar_despensa uno por uno.
+- Conversiones: 1 kg = 1000 g; 1 L = 1000 ml; cucharada ≈ 15 g o ml; cucharadita ≈ 5; chorrito ≈ 10 ml; "un poco" de salsa ≈ 10 g; loncha de fiambre ≈ 15 g; loncha de queso = 1 ud; puñado ≈ 30 g; huevo = 1 ud. Usa la unidad del producto en el catálogo.
+- Si no encuentras el producto en el catálogo o hay dos que encajan igual, pregunta en una frase corta cuál es, en vez de adivinar. Si solo falta la cantidad, usa la conversión razonable y dila.
+- Al confirmar, da las cifras finales que devuelven las herramientas (cuánto queda), no las calcules tú.
+- Si te pide algo que no puedes hacer con tus herramientas, dilo claro en una frase.
+Lo que sabes de sus hábitos (guárdalo en cuenta para sugerencias y para entenderle): ${habitStats()}${(S.habits || []).length ? '\nNotas que has guardado sobre él: ' + S.habits.map(h => h.t).join(' | ') : ''}
+Cuando te cuente algo estable de sus gustos o rutina (qué desayuna siempre, que no come arroz, cuántas fajas suele comer, cuándo hace la compra…), guárdalo con recordar_habito en una frase corta. No guardes cosas de un solo día.
+${recent ? 'Conversación reciente (YA PROCESADA, solo contexto):\n' + recent : ''}
 Cómo hablas:
 - Como un colega español que le echa una mano en la cocina: natural, cercano, de tú. Nada de tono de robot ni de atención al cliente.
 - Corto: una o dos frases. Si hiciste un cambio, di qué cambiaste y cuánto queda, y ya. Ejemplo: "Hecho, te quedan 190 g de champiñones y he quitado un poco de mostaza y de barbacoa."
@@ -919,25 +945,25 @@ function renderAI(busy) {
     <div class="sheet-head"><h2>Asistente</h2><div class="head-actions">${msgs.length ? '<button type="button" class="btn ghost small" data-clear>Borrar chat</button>' : ''}<button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div></div>
     ${aiReady() ? '' : `<div class="check bad">Añade tu ${PROXY ? 'código de invitación' : 'clave de API'} en Ajustes para usar el asistente.</div>`}
     <div class="chat" id="chat" aria-live="polite">${msgs.length ? msgs.filter(m => !isErr(m)).map(m => `<div class="msg ${m.r}">${esc(m.r === 'a' ? plain(m.t) : m.t)}</div>`).join('') : `<div class="msg a">Hola${S.name ? ', ' + esc(S.name) : ''}. Dime qué has comido, qué te sobró o qué quieres cocinar y lo apunto por ti.</div>`}${busy ? '<div class="msg a"><span class="spinner"></span></div>' : ''}</div>
+    ${aiUndo && !busy ? '<button type="button" class="btn ghost small" data-undo style="justify-self:start">Deshacer lo último que hizo</button>' : ''}
+    <details class="habits"><summary>Lo que el asistente sabe de ti (${(S.habits || []).length})</summary>${(S.habits || []).length ? `<ul>${S.habits.map((h, i) => `<li><span>${esc(h.t)}</span><button type="button" class="link" data-habit-del="${i}" aria-label="Olvidar">Olvidar</button></li>`).join('')}</ul>` : '<p class="small muted">Aún nada. Cuéntale tus costumbres («siempre desayuno yogur», «los lunes hago la compra») y lo recordará aunque borres el chat.</p>'}<p class="small muted">Además aprende solo de lo que marcas como comido.</p></details>
     <div class="sugs">${['Me comí 2 griegos de limón', '¿Qué ceno hoy con lo que tengo?', 'Sobró medio paquete de queso rallado', 'Añade 3 tomates a la despensa'].map(s => `<button type="button" class="chip" data-sug="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     <form class="chat-in" id="chat-form"><input id="chat-text" autocomplete="off" placeholder="Escribe aquí…" aria-label="Mensaje"><button type="submit" class="btn" ${busy ? 'disabled' : ''}>Enviar</button></form>`;
   const c = $('#chat'); c.scrollTop = c.scrollHeight;
 }
 function plain(t) { return t.replace(/\*\*|__|`/g, '').replace(/^#+\s*/gm, '').replace(/^\s*[-*]\s+/gm, '• ').replace(/\n{3,}/g, '\n\n').trim(); }
 function isErr(m) { return m.r === 'a' && /^La IA respondió con un error/.test(m.t); }
-function openAI() { renderAI(false); $('#dlg-ai').showModal(); }
+const UNDO_KEYS = ['stock', 'hstock', 'hwant', 'plan', 'P', 'R', 'STEPS', 'mine', 'CATS', 'HP', 'snacks', 'log', 'budget', 'since', 'want', 'snz', 'eaten', 'habits'];
+let aiUndo = null;
+function openAI() {
+  const today = dayKey(new Date()); if (S.chatDay !== today) { S.chat = []; S.chatDay = today; aiUndo = null; save(); } /* el chat empieza limpio cada día; lo aprendido se queda */ renderAI(false); $('#dlg-ai').showModal(); }
 let aiBusy = false;
 async function sendAI(text) {
   if (!text.trim() || aiBusy) return;
   S.chat.push({ r: 'u', t: text.trim() }); aiBusy = true; renderAI(true); save();
-  const history = [];
-  for (const m of S.chat.filter(m => (m.r === 'u' || m.r === 'a') && !isErr(m)).slice(-12)) {
-    const role = m.r === 'u' ? 'user' : 'assistant'; const last = history[history.length - 1];
-    if (last && last.role === role) last.content += '\n' + m.t; else history.push({ role, content: m.t });
-  }
-  while (history.length && history[0].role !== 'user') history.shift();
+  const snap = JSON.stringify(UNDO_KEYS.map(k => S[k])); let changed = false;
   try {
-    const messages = history; let loops = 0;
+    const messages = [{ role: 'user', content: text.trim() }]; let loops = 0;
     const system = aiContext(); // fijo durante toda la respuesta: si cambia, la API rechaza los bloques de razonamiento
     while (loops++ < 6) {
       let data;
@@ -951,17 +977,20 @@ async function sendAI(text) {
       const txt = content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
       if (!uses.length) { if (txt) S.chat.push({ r: 'a', t: txt }); break; }
       messages.push({ role: 'assistant', content });
-      const results = uses.map(u => { let out; try { out = runTool(u.name, u.input || {}); } catch (e) { out = 'Error: ' + e.message; } if (out.startsWith('OK')) S.chat.push({ r: 't', t: '✓ ' + out.slice(4) }); return { type: 'tool_result', tool_use_id: u.id, content: out }; });
+      const results = uses.map(u => { let out; try { out = runTool(u.name, u.input || {}); } catch (e) { out = 'Error: ' + e.message; } if (out.startsWith('OK')) { changed = true; S.chat.push({ r: 't', t: '✓ ' + out.slice(4) }); } return { type: 'tool_result', tool_use_id: u.id, content: out }; });
       messages.push({ role: 'user', content: results });
       render();
     }
   } catch (e) { S.chat.push({ r: 'e', t: e.message }); }
+  aiUndo = changed ? snap : null;
   aiBusy = false; render(); renderAI(false);
 }
 $('#dlg-ai').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
   if (b.dataset.close !== undefined) return $('#dlg-ai').close();
-  if (b.dataset.clear !== undefined) { S.chat = []; save(); return renderAI(false); }
+  if (b.dataset.clear !== undefined) { S.chat = []; aiUndo = null; save(); toast('Chat borrado. Lo que sabe de ti y tus datos se quedan'); return renderAI(false); }
+  if (b.dataset.undo !== undefined && aiUndo) { const v = JSON.parse(aiUndo); UNDO_KEYS.forEach((k, i) => { S[k] = v[i]; }); aiUndo = null; S.chat.push({ r: 't', t: '↩ Deshecho: la despensa vuelve a como estaba antes del último mensaje' }); render(); return renderAI(false); }
+  if (b.dataset.habitDel !== undefined) { S.habits.splice(Number(b.dataset.habitDel), 1); save(); return renderAI(false); }
   if (b.dataset.sug) sendAI(b.dataset.sug);
 });
 $('#dlg-ai').addEventListener('submit', ev => { ev.preventDefault(); const i = $('#chat-text'); const v = i.value; i.value = ''; sendAI(v); });
