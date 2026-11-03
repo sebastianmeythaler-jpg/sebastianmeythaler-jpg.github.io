@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.7 · 3 nov';
+const VERSION = '1.8 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -359,7 +359,7 @@ function renderRecetas() {
   $('#only-tanda').checked = S.onlyTanda;
   const explore = S.seg === 'explore';
   const qn = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const q = qn(S.rq || '');
-  const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda) && (!q || qn(r.n).includes(q) || r.i.some(x => qn(x[0]).includes(q))));
+  const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda) && (!q || qn(r.n).includes(q) || qn(locText(r.n)).includes(q) || r.i.some(x => qn(x[0]).includes(q) || qn(locText(x[0])).includes(q))));
   const el = $('#recipe-list');
   if (!list.length) { el.innerHTML = `<div class="empty">${S.filter.includes('snack') ? 'Aún no hay snacks preparados en el recetario: pronto añadiremos ideas. Mientras, cuéntale al asistente tu snack y lo guarda, o apunta lo que piques desde la pestaña Semana.' : explore ? 'No hay más recetas con este filtro.' : 'Ninguna receta de tu recetario encaja. Añade más desde Explorar.'}</div>`; return; }
   if (!explore) { el.innerHTML = list.map(r => recipeCard(r, false)).join(''); return; }
@@ -378,7 +378,7 @@ function renderSnacks() {
   const { start, end } = weekRange(); const week = (S.snacks || []).filter(x => x.ts >= start.getTime() && x.ts < end.getTime());
   const sel = S.snackSel && inStock.includes(S.snackSel) ? S.snackSel : inStock[0]; const total = week.reduce((a, x) => a + x.c, 0);
   el.innerHTML = `<div class="card-head"><div><h3>Snacks y picoteo</h3><div class="small muted">Apunta lo que piques entre horas: se descuenta de la despensa.</div></div><span class="price">${eur(total)}<small>esta semana</small></span></div>
-    ${inStock.length ? `<div class="add-row"><select class="sel" id="sn-prod" aria-label="Producto">${S.CATS.map(c => { const its = c.items.filter(n => inStock.includes(n)); return its.length ? `<optgroup label="${esc(c.name)}">${its.map(n => `<option ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select>
+    ${inStock.length ? `<div class="add-row"><select class="sel" id="sn-prod" aria-label="Producto">${S.CATS.map(c => { const its = c.items.filter(n => inStock.includes(n)); return its.length ? `<optgroup label="${esc(c.name)}">${its.map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select>
       <input class="qty" id="sn-qty" type="number" min="0" inputmode="decimal" value="${snackDefault(sel)}" aria-label="Cantidad"><span class="muted small" id="sn-unit">${S.P[sel].u}</span>
       <button type="button" class="btn small" data-act="snack-add">Me lo comí</button></div>` : '<p class="small muted" style="margin:0">Cuando tengas cosas en la despensa podrás apuntarlas aquí.</p>'}
     ${week.length ? `<ul class="snack-list">${week.slice().reverse().slice(0, 8).map(x => `<li><span>${new Date(x.ts).toLocaleDateString('es-ES', { weekday: 'short' })} · ${esc(x.n)} <span class="muted">${fmtQ(x.q, S.P[x.n] ? S.P[x.n].u : 'ud')}</span></span><span class="num">${eur(x.c)}</span></li>`).join('')}</ul>` : ''}`;
@@ -486,7 +486,7 @@ function renderDespensa() {
   const cat = S.invCat && S.CATS.some(c => c.name === S.invCat) ? S.invCat : '';
   let html = `<div class="inv-sum"><b>${items.length}</b> ${items.length === 1 ? 'producto' : 'productos'} en casa · ${counts.filter(Boolean).length} categorías</div>
     <div class="chips inv-chips"><button type="button" class="chip" data-act="inv-cat" data-c="" aria-pressed="${!cat}">Todo · ${items.length}</button>${S.CATS.map((c, ci) => counts[ci] ? `<button type="button" class="chip" data-act="inv-cat" data-c="${esc(c.name)}" aria-pressed="${cat === c.name}">${esc(c.name)} · ${counts[ci]}</button>` : '').join('')}</div>
-    <div class="add-row"><select class="sel" id="inv-prod" aria-label="Producto">${S.CATS.map(c => c.items.filter(n => S.P[n]).length ? `<optgroup label="${esc(c.name)}">${c.items.filter(n => S.P[n]).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '').join('')}</select>
+    <div class="add-row"><select class="sel" id="inv-prod" aria-label="Producto">${S.CATS.map(c => c.items.filter(n => S.P[n]).length ? `<optgroup label="${esc(c.name)}">${c.items.filter(n => S.P[n]).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '').join('')}</select>
     <input class="qty" id="inv-qty" type="number" min="0" inputmode="decimal" value="${sp.u === 'ud' ? 1 : sp.q}" aria-label="Cantidad"><span class="muted small" id="inv-unit">${sp.u}</span>
     <button type="button" class="btn small" data-act="inv-add">Añadir</button></div>`;
   S.CATS.forEach((c, ci) => {
@@ -654,7 +654,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.enjoyPopup = $('#st-enjoy').checked; S.theme = $('#st-theme').value; applyTheme();
     const wasOn = S.remind.on, oldT = REM.map(([k]) => S.remind[k]).join(); S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
     if (S.remind.on && (!wasOn || oldT !== REM.map(([k]) => S.remind[k]).join())) enableReminders(); else if (!S.remind.on && wasOn) disablePush();
-    const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); toast(`Precios de referencia de ${REG().name}`); }
+    const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); buildLoc(); toast(`Precios y nombres de ${REG().name}`); setTimeout(() => localize(document.body), 0); }
     S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim();
     if (S.remind.on && wasOn && !S.pushId && canPush()) enableReminders(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
@@ -751,7 +751,7 @@ async function readTicket(file) {
 Catálogo de productos (nombre | unidad | formato):
 ${catalogText()}
 
-Equivalencias aprendidas (texto del ticket → producto): ${JSON.stringify(S.alias)}
+Equivalencias aprendidas (texto del ticket → producto): ${JSON.stringify(S.alias)}${REG().names ? `\nEl ticket es de ${REG().name} (supermercados como Supermaxi, Megamaxi, Tía, Mi Comisariato o Santa María). Allí los productos tienen otros nombres; equivalencias (nombre del catálogo = nombre local): ${Object.entries(REG().names).map(([a, b]) => a + ' = ' + b).join('; ')}. Devuelve siempre el nombre del catálogo.` : ''}
 Productos que hacen falta para el menú de la semana: ${plan.join(', ') || 'ninguno'}
 
 Reglas:
@@ -769,7 +769,7 @@ Reglas:
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
   }
 }
-function prodOptions(sel) { return `<option value="">— Solo gasto —</option><option value="__new">＋ Crear producto nuevo</option>` + Object.keys(S.P).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join(''); }
+function prodOptions(sel) { return `<option value="">— Solo gasto —</option><option value="__new">＋ Crear producto nuevo</option>` + Object.keys(S.P).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join(''); }
 function renderReview() {
   const sum = RV.lineas.reduce((a, l) => a + (Number(l.importe) || 0), 0); const diff = r2(RV.total - sum);
   $('#scan-in').innerHTML = `
@@ -950,7 +950,7 @@ Casa: lo que no es comida (champú, pasta de dientes, detergente, esponjas, fund
 Snacks: si dice que ha picado algo entre horas (una barrita, un yogur, unas galletas), anótalo con anotar_snack.
 Recetas nuevas: si te cuenta una receta suya o te pide añadir una, guárdala con crear_receta sin pedir permiso. Si falta algún ingrediente en el catálogo, créalo antes con crear_producto (formato típico del súper y precio estimado en su moneda). Cantidades para toda la receta, en la unidad del producto. Si no dice raciones, pon 1 en desayunos y cenas al momento y 5 en tandas de almuerzo. Pasos cortos y claros. Si cambia algo de una receta ya creada, crea la versión nueva con el mismo nombre. Al terminar, confirma en una frase con el nombre, las raciones y lo que cuesta más o menos cada ración.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
+País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).${REG().names ? ' Habla con los nombres que se usan en ' + REG().name + ' (en las herramientas usa siempre el nombre del catálogo). Equivalencias: ' + Object.entries(REG().names).map(([a, b]) => a + ' = ' + b).join('; ') + '.' : ''}\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
 Despensa: ${stock || 'vacía'}.
 Menú de la semana: ${plan}.
 Catálogo (nombre | unidad | formato):
@@ -1014,6 +1014,27 @@ $('#dlg-ai').addEventListener('click', ev => {
 });
 $('#dlg-ai').addEventListener('submit', ev => { ev.preventDefault(); const i = $('#chat-text'); const v = i.value; i.value = ''; sendAI(v); });
 for (const d of ['#dlg-settings', '#dlg-scan', '#dlg-ai']) $(d).addEventListener('click', ev => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+
+/* ---------- Nombres locales según el país (solo lo que se ve; por dentro no cambia) ---------- */
+let LOC = null, LOC_RE = null, LOC_FOR = null;
+function buildLoc() {
+  const r = REG(); LOC_FOR = S.region;
+  if (!r.names && !r.words) { LOC = null; LOC_RE = null; return; }
+  const m = {}; const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+  for (const [a, b] of Object.entries(r.words || {})) { m[a] = b; m[cap(a)] = cap(b); }
+  for (const [a, b] of Object.entries(r.names || {})) { m[a] = b; m[a.toLowerCase()] = b.toLowerCase(); }
+  for (const v of Object.values(m)) if (!(v in m)) m[v] = v; // lo ya traducido se queda igual
+  LOC = m; const keys = Object.keys(m).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
+  LOC_RE = new RegExp('(?<![\\p{L}])(' + keys.join('|') + ')(?![\\p{L}])', 'gu');
+}
+function locText(t) { if (LOC_FOR !== S.region) buildLoc(); return LOC_RE && t ? t.replace(LOC_RE, x => LOC[x] || x) : t; }
+function localize(root) {
+  if (LOC_FOR !== S.region) buildLoc(); if (!LOC_RE) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => { const p = n.parentNode; if (!p || /^(SCRIPT|STYLE|TEXTAREA)$/.test(p.nodeName)) return NodeFilter.FILTER_REJECT; if (p.nodeName === 'OPTION' && !p.hasAttribute('value')) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; } });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) { const v = n.nodeValue; if (!v || !v.trim()) continue; const nv = v.replace(LOC_RE, x => LOC[x] || x); if (nv !== v) n.nodeValue = nv; }
+}
+new MutationObserver(ms => { if (S.region !== 'EC' && LOC_FOR === S.region) return; for (const m of ms) for (const n of m.addedNodes) { if (n.nodeType === 1) localize(n); else if (n.nodeType === 3 && n.parentNode) localize(n.parentNode); } }).observe(document.body, { childList: true, subtree: true });
 
 /* ---------- Tema ---------- */
 const THEME_FONTS = { confianza: 'family=Plus+Jakarta+Sans:wght@400;500;600;700;800', fresco: 'family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700' };

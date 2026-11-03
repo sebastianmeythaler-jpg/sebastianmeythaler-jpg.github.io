@@ -32,3 +32,36 @@ window.REGIONS = {
     'Cayena': ['Ají en polvo 30 g', 1, 30], 'Romero': ['Romero 15 g', 1, 15], 'Cúrcuma': ['Cúrcuma 50 g', 1.2, 50], 'Albahaca': ['Albahaca seca 15 g', 1, 15]
   } }
 };
+
+/* Nombres locales: lo que se ve en pantalla cambia según el país; por dentro la app usa siempre el mismo nombre. */
+window.REGIONS.EC.names = {
+  'Plátano': 'Guineo', 'Alubias rojas cocidas': 'Fréjol rojo cocido', 'Alubias blancas cocidas': 'Fréjol blanco cocido', 'Quinoa': 'Quinua',
+  'Cebolla': 'Cebolla paiteña', 'Tomate': 'Tomate riñón', 'Tomate frito': 'Pasta de tomate', 'Kétchup': 'Salsa de tomate', 'Tomate triturado': 'Pulpa de tomate',
+  'Tomate concentrado': 'Pasta de tomate concentrada', 'Tomates cherry': 'Tomate cherry', 'Pimentón dulce': 'Paprika', 'Pimentón de la Vera dulce': 'Paprika ahumada',
+  'Cayena': 'Ají en polvo', 'Comino molido': 'Comino', 'Patata': 'Papa', 'Boniato': 'Camote', 'Calabacín': 'Zuquini', 'Calabaza': 'Zapallo', 'Maíz dulce': 'Choclo desgranado',
+  'Guisantes': 'Arvejas', 'Setas': 'Hongos', 'Espinacas': 'Espinaca', 'Acelgas': 'Acelga', 'Cebollino': 'Cebollín', 'Cilantro': 'Culantro', 'Diente de ajo': 'Ajo',
+  'Espárragos verdes': 'Espárragos', 'Melocotón': 'Durazno', 'Melocotón en almíbar': 'Duraznos en almíbar', 'Fresas': 'Frutillas', 'Frutas congeladas': 'Pulpa de fruta congelada',
+  'Orejones': 'Albaricoques secos', 'Cacahuetes': 'Maní', 'Crema de cacahuete': 'Mantequilla de maní', 'Chocolate negro': 'Chocolate amargo', 'Dulce de leche': 'Manjar de leche',
+  'Nubes': 'Masmelos', 'Grageas de chocolate': 'Confites de chocolate', 'Gelatina de fresa': 'Gelatina de frutilla', 'Bizcochos de soletilla': 'Galletas de champaña',
+  'Natillas en polvo': 'Natilla en polvo', 'Crema de cacao y avellana': 'Crema de cacao (tipo Nutella)', 'Barritas para clase': 'Barras de cereal', 'Griego de limón': 'Yogur griego',
+  'Huevos L': 'Huevos', 'Leche desnatada': 'Leche descremada', 'Nata para cocinar': 'Crema de leche', 'Nata para montar': 'Crema para batir', 'Mantequilla': 'Mantequilla',
+  'Aceite de girasol': 'Aceite vegetal', 'Café soluble': 'Café instantáneo', 'Salsa de soja': 'Salsa china (soya)', 'Salsa allioli': 'Mayonesa de ajo', 'Salsa barbacoa': 'Salsa BBQ',
+  'Olivada': 'Pasta de aceitunas', 'Pan rallado': 'Pan molido', 'Pan campesino': 'Pan baguette', 'Tortillas de avena': 'Tortillas de harina integral', 'Mini tortillas': 'Tortillas pequeñas',
+  'Copos de avena': 'Avena en hojuelas', 'Copos de maíz': 'Corn flakes', 'Pasta integral': 'Fideo integral', 'Macarrones': 'Fideo macarrón', 'Espaguetis': 'Tallarín (espagueti)',
+  'Fideos': 'Fideo cabello de ángel', 'Placas de lasaña': 'Láminas de lasaña', 'Placas de canelón': 'Láminas de canelón', 'Masa quebrada': 'Masa para pie',
+  'Obleas de empanadilla': 'Discos para empanadas', 'Masa de empanada': 'Masa para empanadas', 'Pasta brick': 'Masa brick', 'Pasta filo': 'Masa filo', 'Brioche': 'Pan brioche',
+  'Soja texturizada': 'Soya texturizada', 'Surimi': 'Palitos de cangrejo', 'Harina de maíz precocida': 'Harina de maíz precocida (P.A.N.)', 'Impulsor': 'Polvo de hornear',
+  'Levadura seca': 'Levadura', 'Azúcar avainillado': 'Azúcar con vainilla', 'Tocino / bacon': 'Tocino', 'Jamón cocido': 'Jamón', 'Lomo embuchado': 'Lomo curado',
+  'Morcilla de arroz': 'Morcilla', 'Chorizo en lonchas': 'Chorizo', 'Salami en lonchas': 'Salami', 'Queso en lonchas': 'Queso en láminas',
+  'Carne de cerdo picada': 'Carne molida de chancho', 'Carne picada de ternera': 'Carne molida de res', 'Ternera para guisar': 'Carne de res para guiso',
+  'Filetes de ternera': 'Filetes de res', 'Solomillo de ternera': 'Lomo fino de res', 'Entraña de ternera': 'Entraña de res', 'Solomillo de cerdo': 'Lomo fino de chancho',
+  'Lomo de cerdo': 'Lomo de chancho', 'Paletilla de cerdo': 'Paleta de chancho', 'Costillas de cerdo': 'Costillas de chancho', 'Chuletas de cordero': 'Chuletas de borrego',
+  'Paletilla de cordero': 'Paleta de borrego', 'Pierna de cordero': 'Pierna de borrego', 'Muslos de pollo': 'Presas de pollo (piernas)', 'Pavo en tacos': 'Pavo en trozos',
+  'Gambas peladas': 'Camarones pelados', 'Magret de pato': 'Pechuga de pato', 'Conejo troceado': 'Conejo', 'Vieiras': 'Conchas (vieiras)', 'Lentejas': 'Lenteja'
+};
+window.REGIONS.EC.words = {
+  'patatas': 'papas', 'patata': 'papa', 'cerdo': 'chancho', 'cordero': 'borrego', 'alubias': 'fréjol', 'plátanos': 'guineos', 'plátano': 'guineo',
+  'calabacines': 'zuquinis', 'calabacín': 'zuquini', 'quinoa': 'quinua', 'fresas': 'frutillas', 'fresa': 'frutilla', 'gambas': 'camarones', 'boniato': 'camote',
+  'melocotón': 'durazno', 'melocotones': 'duraznos', 'guisantes': 'arvejas', 'nata': 'crema', 'setas': 'hongos', 'beicon': 'tocino', 'zumo': 'jugo',
+  'cacahuete': 'maní', 'cacahuetes': 'maní', 'ternera': 'res', 'pimentón': 'paprika', 'tarta': 'torta', 'tartas': 'tortas', 'judías': 'vainitas', 'albaricoque': 'albaricoque'
+};
