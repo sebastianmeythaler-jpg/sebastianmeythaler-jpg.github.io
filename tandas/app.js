@@ -142,6 +142,9 @@ function fmtQ(q, u) {
   return (Math.round(q * 4) / 4).toLocaleString('es-ES') + ' ud';
 }
 function perRacion(r, opc) { let c = 0; for (const [n, q, o] of r.i) { if (o && !opc) continue; const p = S.P[n]; if (p) c += (q / r.rac) * ucost(p); } return c; }
+// Fuera de la vista por ahora: la app se centra en gasto, despensa y compra. Poner a true para volver a mostrar las calorías.
+const SHOW_KCAL = false;
+const kcalTxt = (r, opc) => SHOW_KCAL ? ` · ${kcal(r, opc)} kcal` : '';
 function kcal(r, opc) { let k = 0; for (const [n, q, o] of r.i) { if (o && !opc) continue; k += (q / r.rac) * (S.K[n] || 0); } return Math.round(k / 10) * 10; }
 function needs(plan) {
   const m = new Map(); const e = eq();
@@ -307,7 +310,7 @@ function renderDetails(si, pend) {
   </section>
   <section class="panel" aria-label="Tickets de la semana">
     <h3>Tickets de la semana</h3>
-    ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
+    ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
   </section>`;
 }
 
@@ -346,7 +349,7 @@ function recipeCard(r, explore) {
   return `<article class="card">
     <div class="card-head"><h3>${esc(r.n)}</h3>${explore ? '' : `<button type="button" class="link" data-act="unmine" data-id="${r.id}">Quitar</button>`}</div>
     <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc">Apta para tanda</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
-    <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración · ${kcal(r, false)} kcal</small></div>${ctrl}</div>
+    <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración${kcalTxt(r, false)}</small></div>${ctrl}</div>
     ${it && !explore ? `<div class="small muted">En tu semana: ${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ≈ ${eur(perRacion(r, it.opc) * it.veces * eq())}</div>` : ''}
     ${haveLine(r, explore ? null : it)}
     ${impact}
@@ -417,7 +420,7 @@ function renderSemana() {
   el.innerHTML = S.plan.map(it => {
     const r = byId(it.rid); if (!r) return ''; const pr = perRacion(r, it.opc); const hasOpc = r.i.some(x => x[2]);
     return `<article class="card">
-      <div class="card-head"><div><h3>${esc(r.n)}</h3><div class="small muted">${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ${eur(pr)} y ${kcal(r, it.opc)} kcal por ración</div></div><span class="price">${eur(pr * it.veces * e)}</span></div>
+      <div class="card-head"><div><h3>${esc(r.n)}</h3><div class="small muted">${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ${eur(pr)} por ración${kcalTxt(r, it.opc)}</div></div><span class="price">${eur(pr * it.veces * e)}</span></div>
       <div class="meta" style="align-items:center;gap:10px">
         ${it.cocinado ? `<span class="tag acc">Cocinado · quedan ${leftOf(it)}</span>` : `<span class="stepper"><button type="button" data-act="veces" data-k="${it.k}" data-d="-1" aria-label="Un plato menos">−</button><b>${it.veces}</b><button type="button" class="plus" data-act="veces" data-k="${it.k}" data-d="1" aria-label="Un plato más">+</button></span>
         ${hasOpc ? `<label class="toggle"><input type="checkbox" data-act="opc" data-k="${it.k}" ${it.opc ? 'checked' : ''}> Con ${esc(optNames(r).join(' y '))}</label>` : ''}`}
@@ -452,7 +455,7 @@ function renderLista() {
       <label for="sl-${i}"><div class="n">${esc(x.n)}</div><div class="d">${x.cons ? (x.packs ? `${S.want[x.n] ? 'Se te acabó' : 'Lo usa tu semana y no tienes'} · compra 1 × ${esc(x.p.f)}` : `Especia · tienes ${x.have} ${x.have === 1 ? 'bote' : 'botes'}, no hace falta comprar`) : `Necesitas ${fmtQ(x.need, x.p.u)}${x.have ? ` · en casa ${fmtQ(x.have, x.p.u)}` : ''}${x.packs ? ` · compra ${x.packs} × ${esc(x.p.f)}` : ' · no hace falta comprar'}`}</div>${sub ? `<div class="d" style="color:var(--ok)">Para ahorrar: ${sub}</div>` : ''}</label>
       <div class="p num">${x.p.t ? '' : '≈ '}${eur(x.cost)}</div></div>`;
   }).join('') + `<div class="foot"><span>Total a pagar</span><span class="num">≈ ${eur(s.total)}</span></div>` +
-  (s.rows.some(x => x.packs && (S.cart || {})[x.n]) ? `<div class="cart-note"><p class="small muted" style="margin:0">Marcar solo lo pone en el carro. La despensa y el gasto se actualizan al escanear el ticket.</p><button type="button" class="btn small ghost" data-act="cart-stock">No tengo ticket: pasar lo marcado a la despensa</button></div>` : '');
+  (s.rows.some(x => x.packs && (S.cart || {})[x.n]) ? `<div class="cart-note"><p class="small muted" style="margin:0">Marcar solo lo pone en el carro. La despensa y el gasto se actualizan al escanear el ticket (o con el botón de abajo, con precio estimado).</p><button type="button" class="btn small ghost" data-act="cart-stock">No tengo ticket: pasar lo marcado a la despensa</button></div>` : '');
 }
 function renderHogar() {
   const all = Object.keys(S.HP); const have = all.filter(n => (S.hstock[n] || 0) > 0);
@@ -563,9 +566,17 @@ document.addEventListener('click', ev => {
   else if (a === 'more') { S['more_' + b.dataset.t] = (S['more_' + b.dataset.t] || 30) + 30; renderRecetas(); return; }
   else if (a === 'snack-add') { const n = $('#sn-prod').value; const q = Number($('#sn-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.snackSel = n; const c = eatSnack(n, q); toast(`Anotado: ${fmtQ(q, S.P[n].u)} de ${n} (${eur(c)})`); }
   else if (a === 'cart-stock') {
-    const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0;
-    for (const x of rows) { S.stock[x.n] = r2((S.stock[x.n] || 0) + x.packs * x.p.q); if (isC(x.n)) { S.since[x.n] = Date.now(); delete S.want[x.n]; delete S.snz[x.n]; } delete S.cart[x.n]; n++; }
-    toast(`${n} ${n === 1 ? 'producto pasado' : 'productos pasados'} a la despensa. Sin ticket no se suma al gasto`);
+    const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0; const lineas = [];
+    for (const x of rows) {
+      const inv = r2(x.packs * x.p.q);
+      S.stock[x.n] = r2((S.stock[x.n] || 0) + inv); if (isC(x.n)) { S.since[x.n] = Date.now(); delete S.want[x.n]; delete S.snz[x.n]; } delete S.cart[x.n]; n++;
+      lineas.push({ desc: x.n, producto: x.n, inv, uds: x.packs, importe: r2(x.packs * x.p.p), tipo: 'De la lista', grupo: null });
+    }
+    if (lineas.length) {
+      const d = new Date(); const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Sin ticket (estimado)', est: true, total: r2(lineas.reduce((a, l) => a + l.importe, 0)), lineas });
+    }
+    toast(`${n} ${n === 1 ? 'producto pasado' : 'productos pasados'} a la despensa. Gasto apuntado con el precio estimado`);
   }
   else if (a === 'cons-snz') { S.snz[b.dataset.n] = weekRange().end.getTime(); toast('Vale, te lo vuelvo a recordar en la próxima compra'); }
   else if (a === 'cons-out') { const n = b.dataset.n; delete S.stock[n]; S.want[n] = 1; delete S.snz[n]; toast(`${n} añadido a la lista`); }
