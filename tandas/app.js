@@ -511,7 +511,34 @@ function setView(v) {
   for (const b of document.querySelectorAll('.nav .tab')) { if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
   for (const s of document.querySelectorAll('.view')) s.hidden = s.id !== 'v-' + v;
 }
-function render() { renderHeader(); renderRecetas(); renderSemana(); renderLista(); renderDespensa(); setView(S.view); save(); }
+/* ---------- Niveles: la app se va abriendo según lo que haces (nunca se vuelve a cerrar) ----------
+   1 Recetas + Semana · 2 +Lista y escáner (ya hay un plato en la semana) · 3 +Despensa (ya hay compra o stock)
+   4 +Snacks, «Lo que comes» y asistente (ya has cocinado o comido algo) */
+const NIVELES = { 2: 'Lista y escáner de tickets', 3: 'Despensa', 4: 'Snacks, lo que comes y asistente' };
+function calcNivel() {
+  let n = 1;
+  if (S.plan.length || S.tickets.length) n = 2;
+  if (S.tickets.length || Object.keys(S.stock).length) n = Math.max(n, 3);
+  if ((S.log || []).length || S.plan.some(p => p.cocinado)) n = 4;
+  return n;
+}
+function applyNivel() {
+  const prev = S.nivel || 0; const n = Math.max(prev, calcNivel());
+  if (n > prev) { S.nivel = n; if (prev) toast('Desbloqueado: ' + NIVELES[n]); }
+  const show = { lista: n >= 2, despensa: n >= 3 };
+  document.querySelector('.tab[data-view=lista]').hidden = !show.lista;
+  document.querySelector('.tab[data-view=despensa]').hidden = !show.despensa;
+  $('#btn-scan').hidden = n < 2; $('#btn-ai').hidden = n < 4;
+  $('#snack-box').hidden = n < 4; $('#btn-eaten').hidden = n < 4; if (n < 4) $('#eaten-panel').hidden = true;
+  $('.stats').style.gridTemplateColumns = `repeat(${n < 4 ? 2 : 3},minmax(0,1fr))`;
+  $('.nav .wrap').style.gridTemplateColumns = `repeat(${2 + (n >= 2 ? 2 : 0) + (n >= 3 ? 1 : 0)},minmax(0,1fr))`;
+  if (S.view === 'lista' && !show.lista || S.view === 'despensa' && !show.despensa) S.view = 'recetas';
+  const g = n === 1 ? 'Paso 1 · Elige un plato con el botón + y aparecerá en tu Semana. Con eso se abre el siguiente paso.'
+    : n === 2 && !S.tickets.length ? 'Paso 2 · En Lista ves qué te falta comprar. Al comprar, escanea el ticket (botón naranja) para apuntar el gasto y llenar la despensa.'
+    : n === 3 ? 'Paso 3 · Cuando cocines o te comas un plato, márcalo en Semana: la despensa se descuenta sola.' : '';
+  $('#guia').textContent = g; $('#guia').hidden = !g;
+}
+function render() { applyNivel(); renderHeader(); renderRecetas(); renderSemana(); renderLista(); renderDespensa(); setView(S.view); save(); }
 
 /* ---------- Acciones ---------- */
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
