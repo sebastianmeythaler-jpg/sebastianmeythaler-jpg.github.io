@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.6 · 3 nov';
+const VERSION = '1.7 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -78,25 +78,39 @@ function markCons(s) {
   }
   for (const n in s.P) if (s.P[n].c && (s.stock || {})[n] > 0 && !s.since[n]) s.since[n] = lastTicketDate(s, n) || Date.now();
 }
+function placeCats(s) {
+  const inCat = new Set((s.CATS || []).flatMap(c => c.items));
+  for (const n in s.P) {
+    if (inCat.has(n)) continue;
+    const want = s.P[n].c ? 'Especias y condimentos' : (s.P[n].cat || 'Otros');
+    const c = s.CATS.find(x => x.name === want) || s.CATS.find(x => x.name === 'Otros') || s.CATS[s.CATS.length - 1];
+    c.items.push(n); inCat.add(n);
+  }
+}
 function buildCats(s) {
   const cats = NEWCATS.map(([name, items]) => ({ name, items: items.filter(n => s.P[n]) }));
   const known = new Set(cats.flatMap(c => c.items));
   for (const n in s.P) {
     if (known.has(n)) continue;
-    const old = (s.CATS || []).find(c => c.items.includes(n)); const target = s.P[n].c ? 'Especias y condimentos' : (old && (OLDCATS[old.name] || (NEWCATS.some(c => c[0] === old.name) ? old.name : null))) || 'Otros';
+    const old = (s.CATS || []).find(c => c.items.includes(n)); const target = s.P[n].c ? 'Especias y condimentos' : s.P[n].cat && NEWCATS.some(c => c[0] === s.P[n].cat) ? s.P[n].cat : (old && (OLDCATS[old.name] || (NEWCATS.some(c => c[0] === old.name) ? old.name : null))) || 'Otros';
     cats.find(c => c.name === target).items.push(n); known.add(n);
   }
   s.CATS = cats; s.catsV = 2;
 }
 
 /* ---------- Estado ---------- */
-let S = load();
+let S = load(); S.rq = '';
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
+  const LIB = window.LIBRARY || { P: {}, K: {}, R: [], STEPS: {} }; // 300 recetas en Explorar
+  for (const k in LIB.P) if (!seed.P[k]) seed.P[k] = JSON.parse(JSON.stringify(LIB.P[k]));
+  for (const k in LIB.K) if (seed.K[k] === undefined) seed.K[k] = LIB.K[k];
+  for (const r of LIB.R) if (!seed.R.find(x => x.id === r.id)) seed.R.push(JSON.parse(JSON.stringify(r)));
+  Object.assign(seed.STEPS, LIB.STEPS);
   const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], habits: [], modelV: 1, invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
-  markCons(seed); buildCats(seed); ensureHome(seed);
+  markCons(seed); buildCats(seed); placeCats(seed); ensureHome(seed);
   if (!s) return Object.assign(seed, ui);
   const needCats = s.catsV !== 2; const needModel = !s.modelV;
   for (const k in ui) if (s[k] === undefined) s[k] = ui[k];
@@ -107,7 +121,7 @@ function load() {
   for (const r of seed.R) if (!s.R.find(x => x.id === r.id)) s.R.push(r);
   for (const k in seed.STEPS) if (!s.STEPS[k]) s.STEPS[k] = seed.STEPS[k];
   for (const k in seed.K) if (s.K[k] === undefined) s.K[k] = seed.K[k];
-  markCons(s); if (needCats) buildCats(s); ensureHome(s);
+  markCons(s); if (needCats) buildCats(s); placeCats(s); ensureHome(s);
   if (needModel) { s.model = 'claude-sonnet-5-5'; s.modelV = 1; }
   s.habits = s.habits || [];
   return s;
@@ -344,12 +358,15 @@ function renderRecetas() {
   $('#filters').innerHTML = `<button type="button" class="chip" data-act="filter" data-f="" aria-pressed="${S.filter.length === 0}">Todas</button>` + FILTERS.map(([k, l]) => `<button type="button" class="chip" data-act="filter" data-f="${k}" aria-pressed="${S.filter.includes(k)}">${l}</button>`).join('');
   $('#only-tanda').checked = S.onlyTanda;
   const explore = S.seg === 'explore';
-  const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda));
+  const qn = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const q = qn(S.rq || '');
+  const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda) && (!q || qn(r.n).includes(q) || r.i.some(x => qn(x[0]).includes(q))));
   const el = $('#recipe-list');
   if (!list.length) { el.innerHTML = `<div class="empty">${S.filter.includes('snack') ? 'Aún no hay snacks preparados en el recetario: pronto añadiremos ideas. Mientras, cuéntale al asistente tu snack y lo guarda, o apunta lo que piques desde la pestaña Semana.' : explore ? 'No hay más recetas con este filtro.' : 'Ninguna receta de tu recetario encaja. Añade más desde Explorar.'}</div>`; return; }
   if (!explore) { el.innerHTML = list.map(r => recipeCard(r, false)).join(''); return; }
   const groups = [['desayuno', 'Desayunos'], ['almuerzo', 'Almuerzos'], ['cena', 'Cenas'], ['snack', 'Snacks'], ['bebida', 'Bebidas'], ['postre', 'Postres']];
-  el.innerHTML = groups.map(([t, l]) => { const rs = list.filter(r => r.tipos[0] === t); return rs.length ? `<h2 style="font-size:17px;margin-top:6px">${l}</h2>` + rs.map(r => recipeCard(r, true)).join('') : ''; }).join('');
+  const open = S.openGroups || []; const auto = q || S.filter.length === 1;
+  el.innerHTML = groups.map(([t, l]) => { const rs = list.filter(r => r.tipos[0] === t); if (!rs.length) return ''; const isOpen = auto || open.includes(t);
+    return `<details class="rgroup" data-group="${t}" ${isOpen ? 'open' : ''}><summary><span>${l}</span><span class="cnt">${rs.length}</span></summary>${isOpen ? rs.slice(0, S['more_' + t] || 30).map(r => recipeCard(r, true)).join('') + (rs.length > (S['more_' + t] || 30) ? `<button type="button" class="btn ghost wide" data-act="more" data-t="${t}">Ver más (${rs.length - (S['more_' + t] || 30)})</button>` : '') : ''}</details>`; }).join('');
 }
 
 /* ---------- Render: semana, lista, despensa ---------- */
@@ -543,6 +560,7 @@ document.addEventListener('click', ev => {
   }
   else if (a === 'mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); }
   else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
+  else if (a === 'more') { S['more_' + b.dataset.t] = (S['more_' + b.dataset.t] || 30) + 30; renderRecetas(); return; }
   else if (a === 'snack-add') { const n = $('#sn-prod').value; const q = Number($('#sn-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.snackSel = n; const c = eatSnack(n, q); toast(`Anotado: ${fmtQ(q, S.P[n].u)} de ${n} (${eur(c)})`); }
   else if (a === 'cart-stock') {
     const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0;
@@ -580,6 +598,7 @@ document.addEventListener('change', ev => {
   render();
 });
 document.addEventListener('toggle', ev => {
+  const g = ev.target; if (g.dataset && g.dataset.group) { const set = new Set(S.openGroups || []); const was = set.has(g.dataset.group); g.open ? set.add(g.dataset.group) : set.delete(g.dataset.group); S.openGroups = [...set]; save(); if (g.open && !was && !g.querySelector('article')) renderRecetas(); return; }
   const d = ev.target; if (!d.dataset || !d.dataset.how) return; const set = new Set(S.openHow); d.open ? set.add(d.dataset.how) : set.delete(d.dataset.how); S.openHow = [...set]; save();
 }, true);
 
@@ -1105,3 +1124,6 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   // Cuando llega una versión nueva, recarga una vez para usarla
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW && !reloaded) { reloaded = true; location.reload(); } });
 }
+
+let rsT = null;
+$('#rsearch').addEventListener('input', ev => { clearTimeout(rsT); rsT = setTimeout(() => { S.rq = ev.target.value; renderRecetas(); }, 200); });

@@ -41,7 +41,8 @@
         <button type="button" id="seg-mine" aria-pressed="true">Mi recetario</button>
         <button type="button" id="seg-explore" aria-pressed="false">Explorar</button>
       </div>
-      <div class="chips" id="filters" style="margin-top:12px"></div>
+      <input type="search" class="sel rsearch" id="rsearch" placeholder="Buscar receta o ingrediente…" aria-label="Buscar recetas" style="margin-top:12px;width:100%">
+      <div class="chips" id="filters" style="margin-top:10px"></div>
       <label class="toggle" for="only-tanda" style="margin-top:8px"><input type="checkbox" id="only-tanda"> Solo aptas para tanda</label>
       <div class="list" id="recipe-list" style="margin-top:12px"></div>
     </section>
@@ -94,6 +95,7 @@
 <input type="file" id="file-backup" hidden>
 
 <script src="data.js"></script>
+<script src="library.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
