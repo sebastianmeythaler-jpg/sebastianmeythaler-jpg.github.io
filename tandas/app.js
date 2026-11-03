@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.8 · 3 nov';
+const VERSION = '1.9 · 3 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -654,7 +654,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.enjoyPopup = $('#st-enjoy').checked; S.theme = $('#st-theme').value; applyTheme();
     const wasOn = S.remind.on, oldT = REM.map(([k]) => S.remind[k]).join(); S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
     if (S.remind.on && (!wasOn || oldT !== REM.map(([k]) => S.remind[k]).join())) enableReminders(); else if (!S.remind.on && wasOn) disablePush();
-    const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); buildLoc(); toast(`Precios y nombres de ${REG().name}`); setTimeout(() => localize(document.body), 0); }
+    const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); S.cname = {}; S.lname = {}; syncCommunity(true); buildLoc(); toast(`Precios y nombres de ${REG().name}`); setTimeout(() => localize(document.body), 0); }
     S.apiKey = $('#st-key').value.trim(); S.name = $('#st-name').value.trim(); if ($('#st-code')) S.code = $('#st-code').value.trim();
     if (S.remind.on && wasOn && !S.pushId && canPush()) enableReminders(); S.model = $('#st-model').value;
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
@@ -737,7 +737,7 @@ async function readTicket(file) {
                 desc: { type: 'string', description: 'Texto de la línea tal como aparece' },
                 uds: { type: 'number', description: 'Unidades o paquetes comprados' },
                 importe: { type: 'number', description: 'Importe total de la línea, en la moneda del ticket' },
-                producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
+                nombre_comun: { type: ['string', 'null'], description: 'Nombre genérico y corto del producto tal como se dice normalmente en el país del ticket, sin marca ni peso (p. ej. Guineo, Fréjol rojo, Papa chola → Papa)' }, producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
                 cantidad_inventario: { type: 'number', description: 'Cantidad que entra a la despensa en la unidad del producto del catálogo (g, ml o ud). 0 si producto es null' },
                 tipo: { type: 'string', enum: ['De la lista', 'Extra', 'Hogar'] }, producto_hogar: { type: ['string', 'null'], description: 'Solo si tipo es Hogar: nombre corto y genérico (p. ej. Champú, Lavavajillas a mano); usa el de la lista de hogar si existe' }, categoria_hogar: { type: ['string', 'null'], enum: HCATS.concat([null]) },
                 grupo: { type: ['string', 'null'], enum: EXTRA_GROUPS.concat([null]) }
@@ -751,7 +751,7 @@ async function readTicket(file) {
 Catálogo de productos (nombre | unidad | formato):
 ${catalogText()}
 
-Equivalencias aprendidas (texto del ticket → producto): ${JSON.stringify(S.alias)}${REG().names ? `\nEl ticket es de ${REG().name} (supermercados como Supermaxi, Megamaxi, Tía, Mi Comisariato o Santa María). Allí los productos tienen otros nombres; equivalencias (nombre del catálogo = nombre local): ${Object.entries(REG().names).map(([a, b]) => a + ' = ' + b).join('; ')}. Devuelve siempre el nombre del catálogo.` : ''}
+Equivalencias aprendidas (texto del ticket → producto): ${JSON.stringify(S.alias)}${REG().names ? `\nEl ticket es de ${REG().name} (supermercados como Supermaxi, Megamaxi, Tía, Mi Comisariato o Santa María). Allí los productos tienen otros nombres; equivalencias (nombre del catálogo = nombre local): ${Object.entries(locNames() || REG().names).map(([a, b]) => a + ' = ' + b).join('; ')}. Devuelve siempre el nombre del catálogo.` : ''}
 Productos que hacen falta para el menú de la semana: ${plan.join(', ') || 'ninguno'}
 
 Reglas:
@@ -763,7 +763,7 @@ Reglas:
     const data = await claude({ tools: [tool], tool_choice: { type: 'tool', name: 'registrar_ticket' }, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt }] }] });
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
-    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || new Date().toISOString().slice(0, 10), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => ({ desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : '', inv: Number(l.cantidad_inventario) || 0, tipo: ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: l.grupo || 'Otros', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' })) };
+    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || new Date().toISOString().slice(0, 10), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => ({ desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : '', inv: Number(l.cantidad_inventario) || 0, tipo: ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' })) };
     renderReview();
   } catch (e) {
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
@@ -792,7 +792,7 @@ function renderReview() {
     <button type="button" class="btn wide" id="rv-save">Guardar ticket y actualizar despensa</button>`;
 }
 function saveReview() {
-  const id = 't' + Date.now(); const lineas = [];
+  const id = 't' + Date.now(); const lineas = []; const learn = [];
   for (const l of RV.lineas) {
     if (!l.desc && !l.importe) continue;
     if (l.tipo === 'Hogar') {
@@ -813,10 +813,14 @@ function saveReview() {
       if (l.inv > 0) { S.stock[prod] = r2((S.stock[prod] || 0) + Number(l.inv)); if (isC(prod)) { S.since[prod] = new Date(RV.fecha + 'T12:00').getTime() || Date.now(); delete S.want[prod]; delete S.snz[prod]; } }
       if (l.uds > 0 && l.importe > 0 && S.P[prod].q && l.inv > 0) { const packs = l.inv / S.P[prod].q; if (packs > 0) { S.P[prod].p = r2(l.importe / packs); S.P[prod].t = 1; } }
       S.alias[l.desc.toUpperCase()] = prod;
+      const nc = String(l.ncom || '').trim().replace(/^./, c => c.toUpperCase());
+      if (S.region !== 'ES' && nc && nc.toLowerCase() !== prod.toLowerCase()) { S.lname = S.lname || {}; S.lname[prod] = nc; LOC_FOR = null; }
+      if (l.inv > 0 && l.importe > 0) learn.push({ p: prod, pu: r2(l.importe / l.inv * 10000) / 10000, n: S.region !== 'ES' ? nc : '' });
     }
     lineas.push({ desc: l.desc, producto: prod, inv: prod && S.P[prod] ? Number(l.inv) || 0 : 0, uds: Number(l.uds) || 1, importe: r2(Number(l.importe) || 0), tipo: l.tipo, grupo: l.tipo === 'Extra' ? l.grupo : null });
   }
   S.tickets.push({ id, fecha: RV.fecha, tienda: RV.tienda || 'Tienda', total: r2(Number(RV.total) || lineas.reduce((a, l) => a + l.importe, 0)), lineas });
+  if (learn.length && PROXY && S.code) pushPost('comunidad/aprende', { region: S.region, items: learn }).catch(() => {});
   RV = null; $('#dlg-scan').close(); render(); toast('Ticket guardado. Despensa y presupuesto actualizados');
 }
 $('#dlg-scan').addEventListener('click', ev => {
@@ -950,7 +954,7 @@ Casa: lo que no es comida (champú, pasta de dientes, detergente, esponjas, fund
 Snacks: si dice que ha picado algo entre horas (una barrita, un yogur, unas galletas), anótalo con anotar_snack.
 Recetas nuevas: si te cuenta una receta suya o te pide añadir una, guárdala con crear_receta sin pedir permiso. Si falta algún ingrediente en el catálogo, créalo antes con crear_producto (formato típico del súper y precio estimado en su moneda). Cantidades para toda la receta, en la unidad del producto. Si no dice raciones, pon 1 en desayunos y cenas al momento y 5 en tandas de almuerzo. Pasos cortos y claros. Si cambia algo de una receta ya creada, crea la versión nueva con el mismo nombre. Al terminar, confirma en una frase con el nombre, las raciones y lo que cuesta más o menos cada ración.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
-País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).${REG().names ? ' Habla con los nombres que se usan en ' + REG().name + ' (en las herramientas usa siempre el nombre del catálogo). Equivalencias: ' + Object.entries(REG().names).map(([a, b]) => a + ' = ' + b).join('; ') + '.' : ''}\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
+País: ${REG().name}. Moneda: ${REG().currency} (habla de precios en esa moneda).${REG().names ? ' Habla con los nombres que se usan en ' + REG().name + ' (en las herramientas usa siempre el nombre del catálogo). Equivalencias: ' + Object.entries(locNames() || REG().names).map(([a, b]) => a + ' = ' + b).join('; ') + '.' : ''}\nPresupuesto semanal: ${eur(S.budget)}. Gastado esta semana: ${eur(si.spent)} (extras ${eur(si.extras)}). Falta comprar para el menú: ${eur(pend)}. Comensales: ${S.adults} adultos, ${S.kids} niños.
 Despensa: ${stock || 'vacía'}.
 Menú de la semana: ${plan}.
 Catálogo (nombre | unidad | formato):
@@ -1017,12 +1021,15 @@ for (const d of ['#dlg-settings', '#dlg-scan', '#dlg-ai']) $(d).addEventListener
 
 /* ---------- Nombres locales según el país (solo lo que se ve; por dentro no cambia) ---------- */
 let LOC = null, LOC_RE = null, LOC_FOR = null;
+// Nombres que se ven: los del país, mejorados con lo que aprende la comunidad y, por encima, con los de tus propios tickets
+function locNames() { const r = REG(); if (S.region === 'ES' || !r.names) return null; return Object.assign({}, r.names, S.cname || {}, S.lname || {}); }
 function buildLoc() {
   const r = REG(); LOC_FOR = S.region;
   if (!r.names && !r.words) { LOC = null; LOC_RE = null; return; }
+  const names = locNames() || r.names || {};
   const m = {}; const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
   for (const [a, b] of Object.entries(r.words || {})) { m[a] = b; m[cap(a)] = cap(b); }
-  for (const [a, b] of Object.entries(r.names || {})) { m[a] = b; m[a.toLowerCase()] = b.toLowerCase(); }
+  for (const [a, b] of Object.entries(names)) { m[a] = b; m[a.toLowerCase()] = b.toLowerCase(); }
   for (const v of Object.values(m)) if (!(v in m)) m[v] = v; // lo ya traducido se queda igual
   LOC = m; const keys = Object.keys(m).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
   LOC_RE = new RegExp('(?<![\\p{L}])(' + keys.join('|') + ')(?![\\p{L}])', 'gu');
@@ -1035,6 +1042,17 @@ function localize(root) {
   for (const n of nodes) { const v = n.nodeValue; if (!v || !v.trim()) continue; const nv = v.replace(LOC_RE, x => LOC[x] || x); if (nv !== v) n.nodeValue = nv; }
 }
 new MutationObserver(ms => { if (S.region !== 'EC' && LOC_FOR === S.region) return; for (const m of ms) for (const n of m.addedNodes) { if (n.nodeType === 1) localize(n); else if (n.nodeType === 3 && n.parentNode) localize(n.parentNode); } }).observe(document.body, { childList: true, subtree: true });
+
+/* ---------- Aprendizaje de la comunidad: precios y nombres de otros usuarios del mismo país ---------- */
+async function syncCommunity(force) {
+  if (!PROXY || !S.code) return; const today = dayKey(new Date()); if (!force && S.comDay === today) return;
+  try {
+    const r = await pushPost('comunidad/leer', { region: S.region }); if (!r || !r.ok) return;
+    let n = 0;
+    for (const [prod, pu] of Object.entries(r.precios || {})) { const p = S.P[prod]; if (!p || p.t === 1 || !(pu > 0)) continue; const np = r2(pu * p.q); if (np > 0 && np !== p.p) { p.p = np; p.cp = 1; n++; } }
+    S.cname = S.region !== 'ES' ? (r.nombres || {}) : {}; S.comDay = today; LOC_FOR = null; save(); render();
+  } catch (e) {}
+}
 
 /* ---------- Tema ---------- */
 const THEME_FONTS = { confianza: 'family=Plus+Jakarta+Sans:wght@400;500;600;700;800', fresco: 'family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700' };
@@ -1133,7 +1151,7 @@ $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
 /* ---------- Arranque ---------- */
 render();
 if (!S.name) openWelcome();
-checkReminders(); mirrorState();
+checkReminders(); mirrorState(); setTimeout(() => syncCommunity(false), 1500);
 $('#dlg-pop').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b && ev.target !== ev.currentTarget) return;
   const off = $('#pop-off'); if (off && off.checked) { S.enjoyPopup = false; save(); toast('Vale, no te lo vuelvo a mostrar. Puedes reactivarlo en Ajustes'); }

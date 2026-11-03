@@ -60,7 +60,7 @@ window.REGIONS.EC.names = {
   'Gambas peladas': 'Camarones pelados', 'Magret de pato': 'Pechuga de pato', 'Conejo troceado': 'Conejo', 'Vieiras': 'Conchas (vieiras)', 'Lentejas': 'Lenteja'
 };
 window.REGIONS.EC.words = {
-  'patatas': 'papas', 'patata': 'papa', 'cerdo': 'chancho', 'cordero': 'borrego', 'alubias': 'fréjol', 'plátanos': 'guineos', 'plátano': 'guineo',
+  'alubias blancas': 'fréjol blanco', 'alubias rojas': 'fréjol rojo', 'patatas': 'papas', 'patata': 'papa', 'cerdo': 'chancho', 'cordero': 'borrego', 'alubias': 'fréjol', 'plátanos': 'guineos', 'plátano': 'guineo',
   'calabacines': 'zuquinis', 'calabacín': 'zuquini', 'quinoa': 'quinua', 'fresas': 'frutillas', 'fresa': 'frutilla', 'gambas': 'camarones', 'boniato': 'camote',
   'melocotón': 'durazno', 'melocotones': 'duraznos', 'guisantes': 'arvejas', 'nata': 'crema', 'setas': 'hongos', 'beicon': 'tocino', 'zumo': 'jugo',
   'cacahuete': 'maní', 'cacahuetes': 'maní', 'ternera': 'res', 'pimentón': 'paprika', 'tarta': 'torta', 'tartas': 'tortas', 'judías': 'vainitas', 'albaricoque': 'albaricoque'
