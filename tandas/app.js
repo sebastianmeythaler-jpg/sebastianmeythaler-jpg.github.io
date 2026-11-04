@@ -541,7 +541,7 @@ function applyNivel() {
 function render() { applyNivel(); renderHeader(); renderRecetas(); renderSemana(); renderLista(); renderDespensa(); setView(S.view); save(); }
 
 /* ---------- Acciones ---------- */
-function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
+function toast(msg) { let box = document.getElementById('toasts'); if (!box) { box = document.createElement('div'); box.id = 'toasts'; box.className = 'toasts'; document.body.appendChild(box); } const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; box.appendChild(t); setTimeout(() => t.remove(), 3500); }
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
   if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { lastDeduct = deduct(r, 1, it.opc, it); it.veces -= 1; }
