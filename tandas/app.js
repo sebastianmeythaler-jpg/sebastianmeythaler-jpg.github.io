@@ -249,23 +249,25 @@ function level(pct) { return pct >= 0.99 ? 'lv-over' : pct >= 0.8 ? 'lv-high' : 
 // Descuenta de la despensa lo que gasta un plato. Si falta un ingrediente, tira de sus sustitutos (misma unidad)
 // sin tocar lo que reservan otros platos de la semana. Devuelve qué se sustituyó y qué faltó.
 function deduct(r, platos, opc, exclude) {
-  const e = eq(); const used = [], missing = [];
+  const e = eq(); const used = [], missing = []; let cost = 0, full = 0;
   const reserved = needs(S.plan.filter(p => p !== exclude));
   const take = (n, amt) => { const left = (S.stock[n] || 0) - amt; if (left > 1e-6) S.stock[n] = r2(left); else delete S.stock[n]; };
   for (const [n, q, o] of r.i) {
-    if (o && !opc) continue; if (isC(n) || !S.P[n]) continue;
-    const need = q / r.rac * platos * e; const have = S.stock[n] || 0; const own = Math.min(have, need); take(n, own);
+    if (o && !opc) continue; if (!S.P[n]) continue;
+    const need = q / r.rac * platos * e; const uc = ucost(S.P[n]); full += need * uc;
+    if (isC(n)) { cost += need * uc; continue; }
+    const have = S.stock[n] || 0; const own = Math.min(have, need); take(n, own); cost += own * uc;
     let short = need - own; if (short <= 1e-6) continue;
     const g = S.SUBS.find(x => x.includes(n)) || []; const u = S.P[n].u;
     for (const sb of g) {
       if (sb === n || !S.P[sb] || S.P[sb].u !== u) continue;
       const spare = (S.stock[sb] || 0) - (reserved.get(sb) || 0); if (spare <= 1e-6) continue;
-      const t = Math.min(spare, short); take(sb, t); short -= t; used.push(`${fmtQ(t, u)} de ${sb} en vez de ${n}`);
+      const t = Math.min(spare, short); take(sb, t); cost += t * ucost(S.P[sb]); short -= t; used.push(`${fmtQ(t, u)} de ${sb} en vez de ${n}`);
       if (short <= 1e-6) break;
     }
     if (short > 1e-6) missing.push(`${n} (${fmtQ(short, u)})`);
   }
-  return { used, missing };
+  return { used, missing, cost: r2(cost), full: r2(full) };
 }
 
 /* ---------- Render: cabecera ---------- */
@@ -393,6 +395,7 @@ function eatSnack(n, q) {
   logMeal('snack', `${n} (${fmtQ(q, p.u)})`, c); return c;
 }
 const MEAL_LABEL = { desayuno: 'Desayuno', almuerzo: 'Almuerzo', merienda: 'Merienda', cena: 'Cena', snack: 'Snack' };
+function stockValue() { return Object.keys(S.stock).filter(n => S.P[n] && !isC(n)).reduce((a, n) => a + S.stock[n] * ucost(S.P[n]), 0); }
 function renderEaten() {
   const { start, end } = weekRange(); const week = (S.log || []).filter(x => x.ts >= start.getTime() && x.ts < end.getTime());
   const total = week.reduce((a, x) => a + (x.c || 0), 0);
@@ -408,7 +411,7 @@ function renderEaten() {
   }
   el.innerHTML = `<div class="gh" style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"><span>Lo que has comido esta semana</span><span class="num">${eur(total)}</span></div>` +
     [...days.values()].map(({ d, rows }) => `<div class="eat-day"><div class="eat-dh">${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/^./, c => c.toUpperCase())}</div>${rows.map(r => `<div class="eat-r"><span class="tag">${MEAL_LABEL[r.t] || r.t}</span><span class="eat-n">${r.n ? esc(r.n) : '<span class="muted">sin detalle</span>'}${r.k > 1 ? ` <b>×${r.k}</b>` : ''}</span><span class="num small">${eur(r.c)}</span></div>`).join('')}</div>`).join('') +
-    `<p class="small muted" style="margin:8px 0 0">Coste según el precio de los ingredientes. ${week.some(x => !x.n) ? 'Lo anotado antes de esta versión sale sin detalle.' : ''}</p>`;
+    `<p class="small muted" style="margin:8px 0 0">Solo cuenta lo que sale de tu despensa, al precio de lo que compraste. Lo que ya has comprado y aún no te has comido (≈ ${eur(stockValue())}) está en la despensa, por eso lo gastado en la semana es mayor. ${week.some(x => !x.n) ? 'Lo anotado antes de esta versión sale sin detalle.' : ''}</p>`;
 }
 function renderSemana() {
   renderSnacks();
@@ -544,9 +547,10 @@ function render() { applyNivel(); renderHeader(); renderRecetas(); renderSemana(
 function toast(msg) { let box = document.getElementById('toasts'); if (!box) { box = document.createElement('div'); box.id = 'toasts'; box.className = 'toasts'; document.body.appendChild(box); } const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; box.appendChild(t); setTimeout(() => t.remove(), 3500); }
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
+  const wasCooked = !!it.cocinado;
   if (it.cocinado) it.comidos = (it.comidos || 0) + 1; else { lastDeduct = deduct(r, 1, it.opc, it); it.veces -= 1; }
   if (t && t !== 'snack') S.eaten[t] = (S.eaten[t] || 0) + 1;
-  logMeal(t, r.n, perRacion(r, it.opc));
+  logMeal(t, r.n, wasCooked ? perRacion(r, it.opc) * eq() * (it.cov == null ? 1 : it.cov) : lastDeduct.cost);
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
 }
 function logMeal(t, n, c) {
@@ -561,8 +565,8 @@ function enjoyed(n, r) {
   $('#dlg-pop').showModal();
 }
 let lastDeduct = null;
-function cook(it) { const r = byId(it.rid); const d = deduct(r, it.veces, it.opc, it); it.cocinado = true; it.comidos = it.comidos || 0; return d; }
-function deductMsg(d) { if (!d) return ''; const parts = []; if (d.used.length) parts.push('Usé ' + d.used.join(', ')); if (d.missing.length) parts.push('No tenías ' + d.missing.join(', ') + ': lo dejo a 0'); return parts.join('. '); }
+function cook(it) { const r = byId(it.rid); const d = deduct(r, it.veces, it.opc, it); it.cov = d.full > 0 ? d.cost / d.full : 1; it.cocinado = true; it.comidos = it.comidos || 0; return d; }
+function deductMsg(d) { if (!d) return ''; const parts = []; if (d.used.length) parts.push('Usé ' + d.used.join(', ')); if (d.missing.length) parts.push('No tenías ' + d.missing.join(', ') + ': no lo compraste, así que no cuenta en lo que comes'); return parts.join('. '); }
 
 document.addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
@@ -935,7 +939,7 @@ function runTool(name, x) {
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
   if (name === 'anotar_comida') {
     const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const n = x.raciones || 1;
-    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { deduct(r, 1, false, null); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t, r.n, perRacion(r, false)); } }
+    for (let i = 0; i < n; i++) { const it = S.plan.find(p => p.rid === r.id); if (it) eatOne(it); else { const d = deduct(r, 1, false, null); const t = mealOf(r); if (t) S.eaten[t] = (S.eaten[t] || 0) + 1; logMeal(t, r.n, d.cost); } }
     return `OK. Anotadas ${n} raciones de ${r.n}.`;
   }
   if (name === 'marcar_cocinado') { const r = findR(x.receta_id); const it = r && S.plan.find(p => p.rid === r.id && !p.cocinado); if (!it) return 'Error: esa receta no está pendiente en la semana.'; const m = deductMsg(cook(it)); return `OK. ${r.n} cocinado; despensa descontada.${m ? ' ' + m + '.' : ''}`; }
