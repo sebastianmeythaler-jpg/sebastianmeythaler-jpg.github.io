@@ -107,7 +107,7 @@ function load() {
   for (const k in LIB.K) if (seed.K[k] === undefined) seed.K[k] = LIB.K[k];
   for (const r of LIB.R) if (!seed.R.find(x => x.id === r.id)) seed.R.push(JSON.parse(JSON.stringify(r)));
   Object.assign(seed.STEPS, LIB.STEPS);
-  const ui = { view: 'recetas', seg: 'mine', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], habits: [], modelV: 1, invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
+  const ui = { view: 'recetas', seg: 'explore', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], habits: [], modelV: 1, invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   markCons(seed); buildCats(seed); placeCats(seed); ensureHome(seed);
@@ -372,8 +372,8 @@ function renderRecetas() {
   const qn = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const q = qn(S.rq || '');
   const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda) && (!q || qn(r.n).includes(q) || qn(locText(r.n)).includes(q) || r.i.some(x => qn(x[0]).includes(q) || qn(locText(x[0])).includes(q))));
   const el = $('#recipe-list');
-  if (!list.length) { el.innerHTML = `<div class="empty">${S.filter.includes('snack') ? 'Aún no hay snacks preparados en el recetario: pronto añadiremos ideas. Mientras, cuéntale al asistente tu snack y lo guarda, o apunta lo que piques desde la pestaña Semana.' : explore ? 'No hay más recetas con este filtro.' : 'Ninguna receta de tu recetario encaja. Añade más desde Explorar.'}</div>`; return; }
-  if (!explore) { el.innerHTML = list.map(r => recipeCard(r, false)).join(''); return; }
+  if (!list.length) { el.innerHTML = `<div class="empty">${S.filter.includes('snack') ? 'Aún no hay snacks preparados en el recetario: pronto añadiremos ideas. Mientras, cuéntale al asistente tu snack y lo guarda, o apunta lo que piques desde la pestaña Semana.' : explore ? 'No hay más recetas con este filtro.' : (S.mine.length ? 'Ninguna receta de tu recetario encaja con el filtro. Añade más desde Explorar.' : 'Tu recetario está vacío. Entra en Explorar y añade los platos que quieras cocinar.')}</div>`; return; }
+  if (!explore) { el.innerHTML = list.length ? list.map(r => recipeCard(r, false)).join('') : `<div class="empty">${S.mine.length ? 'Ninguna receta de tu recetario coincide con el filtro.' : 'Tu recetario está vacío. Entra en Explorar y añade los platos que quieras cocinar.'}</div>`; return; }
   const groups = [['desayuno', 'Desayunos'], ['almuerzo', 'Almuerzos'], ['cena', 'Cenas'], ['snack', 'Snacks'], ['bebida', 'Bebidas'], ['postre', 'Postres']];
   const open = S.openGroups || []; const auto = q || S.filter.length === 1;
   el.innerHTML = groups.map(([t, l]) => { const rs = list.filter(r => r.tipos[0] === t); if (!rs.length) return ''; const isOpen = auto || open.includes(t);
@@ -543,9 +543,10 @@ function applyNivel() {
   $('.stats').style.gridTemplateColumns = `repeat(${n < 4 ? 2 : 3},minmax(0,1fr))`;
   $('.nav .wrap').style.gridTemplateColumns = `repeat(${2 + (n >= 2 ? 2 : 0) + (n >= 3 ? 1 : 0)},minmax(0,1fr))`;
   if (S.view === 'lista' && !show.lista || S.view === 'despensa' && !show.despensa) S.view = 'recetas';
-  const g = n === 1 ? 'Paso 1 · Elige un plato con el botón + y aparecerá en tu Semana. Con eso se abre el siguiente paso.'
-    : n === 2 && !S.tickets.length ? 'Paso 2 · En Lista ves qué te falta comprar. Al comprar, escanea el ticket (botón naranja) para apuntar el gasto y llenar la despensa.'
-    : n === 3 ? 'Paso 3 · Cuando cocines o te comas un plato, márcalo en Semana: la despensa se descuenta sola.' : '';
+  const g = n === 1 && !S.mine.length ? 'Paso 1 · Entra en «Explorar» y pulsa «+ A mi recetario» en los platos que quieras cocinar.'
+    : n === 1 ? 'Paso 2 · En «Mi recetario» pulsa el botón + de un plato para llevarlo a tu Semana. Con eso se abre el siguiente paso.'
+    : n === 2 && !S.tickets.length ? 'Paso 3 · En Lista ves qué te falta comprar. Al comprar, escanea el ticket (botón naranja) para apuntar el gasto y llenar la despensa.'
+    : n === 3 ? 'Paso 4 · Cuando cocines o te comas un plato, márcalo en Semana: la despensa se descuenta sola.' : '';
   $('#guia').textContent = g; $('#guia').hidden = !g;
 }
 function render() { applyNivel(); renderHeader(); renderRecetas(); renderSemana(); renderLista(); renderDespensa(); setView(S.view); save(); }
