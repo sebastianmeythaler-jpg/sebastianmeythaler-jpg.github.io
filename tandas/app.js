@@ -1252,8 +1252,6 @@ $('#dlg-welcome').addEventListener('click', ev => {
 $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
 
 /* ---------- Arranque ---------- */
-// Una sola vez: lo anotado antes de corregir el cálculo (comidas valoradas sin tener los ingredientes) no cuadra con el gasto
-if (!S.logFix && (S.log || []).some(x => x.v !== 2 && x.t !== 'snack')) { S.log = S.log.filter(x => x.v === 2 || x.t === 'snack'); S.logFix = 1; setTimeout(() => toast('He limpiado lo comido anotado antes de la corrección: no cuadraba con el gasto'), 800); } else S.logFix = 1;
 render();
 if (!S.name) openWelcome();
 checkReminders(); mirrorState(); setTimeout(() => syncCommunity(false), 1500);
