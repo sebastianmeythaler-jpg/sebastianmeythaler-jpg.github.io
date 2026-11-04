@@ -383,15 +383,21 @@ function renderRecetas() {
 /* ---------- Render: semana, lista, despensa ---------- */
 const eatN = {};
 function snackDefault(n) { const p = S.P[n]; return !p ? 1 : p.u === 'ud' ? 1 : p.u === 'ml' ? 200 : 30; }
+// Solo lo que tiene sentido picar entre horas: dulces/snacks, fruta, yogur, o lo que el ticket marcó como snack. Nunca aceite, harina, especias…
+const SNACK_CATS = ['Dulces y snacks', 'Frutas'];
+function isSnack(n) {
+  const p = S.P[n]; if (!p || isC(n)) return false; if (p.snack) return true;
+  const c = (S.CATS || []).find(x => x.items.includes(n)); return !!c && SNACK_CATS.includes(c.name) || n === 'Griego de limón';
+}
 function renderSnacks() {
   const el = $('#snack-box'); if (!el) return;
-  const inStock = Object.keys(S.stock).filter(n => S.P[n] && S.stock[n] > 0 && !isC(n)).sort((a, b) => a.localeCompare(b, 'es'));
+  const inStock = Object.keys(S.stock).filter(n => S.stock[n] > 0 && isSnack(n)).sort((a, b) => a.localeCompare(b, 'es'));
   const { start, end } = weekRange(); const week = (S.snacks || []).filter(x => x.ts >= start.getTime() && x.ts < end.getTime());
   const sel = S.snackSel && inStock.includes(S.snackSel) ? S.snackSel : inStock[0]; const total = week.reduce((a, x) => a + x.c, 0);
   el.innerHTML = `<div class="card-head"><div><h3>Snacks y picoteo</h3><div class="small muted">Apunta lo que piques entre horas: se descuenta de la despensa.</div></div><span class="price">${eur(total)}<small>esta semana</small></span></div>
     ${inStock.length ? `<div class="add-row"><select class="sel" id="sn-prod" aria-label="Producto">${S.CATS.map(c => { const its = c.items.filter(n => inStock.includes(n)); return its.length ? `<optgroup label="${esc(c.name)}">${its.map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select>
       <input class="qty" id="sn-qty" type="number" min="0" inputmode="decimal" value="${snackDefault(sel)}" aria-label="Cantidad"><span class="muted small" id="sn-unit">${S.P[sel].u}</span>
-      <button type="button" class="btn small" data-act="snack-add">Me lo comí</button></div>` : '<p class="small muted" style="margin:0">Cuando tengas cosas en la despensa podrás apuntarlas aquí.</p>'}
+      <button type="button" class="btn small" data-act="snack-add">Me lo comí</button></div>` : '<p class="small muted" style="margin:0">Cuando tengas galletas, barritas, dulces o fruta en la despensa podrás apuntarlos aquí.</p>'}
     ${week.length ? `<ul class="snack-list">${week.slice().reverse().slice(0, 8).map(x => `<li><span>${new Date(x.ts).toLocaleDateString('es-ES', { weekday: 'short' })} · ${esc(x.n)} <span class="muted">${fmtQ(x.q, S.P[x.n] ? S.P[x.n].u : 'ud')}</span></span><span class="num">${eur(x.c)}</span></li>`).join('')}</ul>` : ''}`;
 }
 function eatSnack(n, q) {
@@ -791,7 +797,8 @@ async function readTicket(file) {
                 nombre_comun: { type: ['string', 'null'], description: 'Nombre genérico y corto del producto tal como se dice normalmente en el país del ticket, sin marca ni peso (p. ej. Guineo, Fréjol rojo, Papa chola → Papa)' }, producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
                 cantidad_inventario: { type: 'number', description: 'Cantidad que entra a la despensa en la unidad del producto del catálogo (g, ml o ud). 0 si producto es null' },
                 tipo: { type: 'string', enum: ['De la lista', 'Extra', 'Hogar'] }, producto_hogar: { type: ['string', 'null'], description: 'Solo si tipo es Hogar: nombre corto y genérico (p. ej. Champú, Lavavajillas a mano); usa el de la lista de hogar si existe' }, categoria_hogar: { type: ['string', 'null'], enum: HCATS.concat([null]) },
-                grupo: { type: ['string', 'null'], enum: EXTRA_GROUPS.concat([null]) }
+                grupo: { type: ['string', 'null'], enum: EXTRA_GROUPS.concat([null]) },
+                es_snack: { type: 'boolean', description: 'true solo si es algo para picar entre horas: galletas, barritas, chocolate, dulces, golosinas, snacks salados, helados, bollería. false para ingredientes de cocina y productos de uso largo (aceite, harina, azúcar, arroz, especias, salsas, mermelada, leche…)' }
               }
             }
           }
@@ -810,11 +817,12 @@ Reglas:
 - producto: el nombre exacto del catálogo si es claramente ese producto; si no, null.
 - cantidad_inventario: uds × tamaño del formato del catálogo, en su unidad (ejemplo: 2 paquetes de quinoa de 250 g = 500). Para fruta al peso usa el peso o las unidades según la unidad del catálogo. Para productos CONSUMIBLES (especias, sazonadores) es el número de botes, no los gramos (2 botes de comino = 2).
 - tipo "Hogar": todo lo que no se come ni se bebe: aseo personal (pasta de dientes, champú, gel, desodorante, papel higiénico), limpieza (lavavajillas, esponjas, detergente, lejía) y cosas de casa (fundas o bolsas de basura, papel de cocina, aluminio, film, servilletas, pilas). En ese caso producto = null, cantidad_inventario = número de unidades, y rellena producto_hogar y categoria_hogar. Productos de hogar ya conocidos: ${Object.keys(S.HP).join(', ')}.
+- es_snack: true solo para galletas, barritas, chocolate, dulces, golosinas, snacks salados, helados o bollería; false para ingredientes de cocina y productos de uso largo (aceite, harina, azúcar, salsas…).
 - tipo: "De la lista" si es comida básica de cocinar o un producto del catálogo usado en recetas; "Extra" si es dulce, capricho, snack o bebida no planificada. Si es Extra, elige grupo.`;
     const data = await claude({ tools: [tool], tool_choice: { type: 'tool', name: 'registrar_ticket' }, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt }] }] });
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
-    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || new Date().toISOString().slice(0, 10), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => ({ desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : '', inv: Number(l.cantidad_inventario) || 0, tipo: ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' })) };
+    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || new Date().toISOString().slice(0, 10), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; return { es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
     renderReview();
   } catch (e) {
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
@@ -856,7 +864,7 @@ function saveReview() {
     let prod = l.producto || null;
     if (prod === '__new') {
       prod = l.desc.trim().toLowerCase().replace(/^./, c => c.toUpperCase());
-      if (!S.P[prod]) { S.P[prod] = { f: 'Unidad', p: r2((l.importe || 0) / (l.uds || 1)), q: 1, u: 'ud', t: 1 }; S.CATS[S.CATS.length - 1].items.push(prod); }
+      if (!S.P[prod]) { S.P[prod] = { f: 'Unidad', p: r2((l.importe || 0) / (l.uds || 1)), q: 1, u: 'ud', t: 1 }; if (l.es_snack) S.P[prod].snack = 1; const cat = (l.es_snack && S.CATS.find(c => c.name === 'Dulces y snacks')) || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
       l.inv = l.inv || l.uds || 1;
     }
     if (prod && S.P[prod]) {
