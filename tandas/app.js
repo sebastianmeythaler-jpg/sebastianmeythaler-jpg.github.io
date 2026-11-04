@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '1.9 · 3 nov';
+const VERSION = '2.0 · 4 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
