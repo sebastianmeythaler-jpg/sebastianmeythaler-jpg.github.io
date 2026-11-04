@@ -188,6 +188,12 @@ function coverage(r, veces, opc, excludeK) {
     return { n, need, ok: avail + 1e-6 >= need, miss: Math.max(0, need - avail), o };
   });
 }
+// ¿Se puede cocinar/comer `platos` de este plato con lo que hay en la despensa? (sustitutos válidos; especias no bloquean)
+function canMake(it, platos) {
+  const r = byId(it.rid); if (!r || !r.i.length) return true;
+  return coverage(r, platos, it.opc, it.k).every(x => x.ok || x.c || subText(x.n, x.miss));
+}
+function maxMake(it, want) { let m = 0; while (m < want && canMake(it, m + 1)) m++; return m; }
 function maxPlatos(r, opc, excludeK) {
   const reserved = needs(S.plan.filter(p => p.k !== excludeK)); const e = eq(); let m = Infinity;
   for (const [n, q, o] of r.i) { if (o && !opc) continue; if (isC(n)) continue; const per = q / r.rac * e; const avail = Math.max(0, (S.stock[n] || 0) - (reserved.get(n) || 0)); m = Math.min(m, Math.floor(avail / per + 1e-6)); }
@@ -411,7 +417,7 @@ function renderEaten() {
   }
   el.innerHTML = `<div class="gh" style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"><span>Lo que has comido esta semana</span><span class="num">${eur(total)}</span></div>` +
     [...days.values()].map(({ d, rows }) => `<div class="eat-day"><div class="eat-dh">${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/^./, c => c.toUpperCase())}</div>${rows.map(r => `<div class="eat-r"><span class="tag">${MEAL_LABEL[r.t] || r.t}</span><span class="eat-n">${r.n ? esc(r.n) : '<span class="muted">sin detalle</span>'}${r.k > 1 ? ` <b>×${r.k}</b>` : ''}</span><span class="num small">${eur(r.c)}</span></div>`).join('')}</div>`).join('') +
-    `<p class="small muted" style="margin:8px 0 0">Solo cuenta lo que sale de tu despensa, al precio de lo que compraste. Lo que ya has comprado y aún no te has comido (≈ ${eur(stockValue())}) está en la despensa, por eso lo gastado en la semana es mayor. ${week.some(x => !x.n) ? 'Lo anotado antes de esta versión sale sin detalle.' : ''}</p>`;
+    `<p class="small muted" style="margin:8px 0 0">Solo cuenta lo que sale de tu despensa, al precio de lo que compraste. ${total > spentInfo().spent + 0.005 ? `De lo comido, ${eur(total - spentInfo().spent)} salía de cosas que ya tenías de antes (no cuentan como gasto de esta semana). ` : `Lo que ya has comprado y aún no te has comido (≈ ${eur(stockValue())}) está en la despensa, por eso lo gastado en la semana es mayor. `}${week.some(x => !x.n) ? 'Lo anotado antes de esta versión sale sin detalle.' : ''}</p>`;
 }
 function renderSemana() {
   renderSnacks();
@@ -429,8 +435,9 @@ function renderSemana() {
         ${hasOpc ? `<label class="toggle"><input type="checkbox" data-act="opc" data-k="${it.k}" ${it.opc ? 'checked' : ''}> Con ${esc(optNames(r).join(' y '))}</label>` : ''}`}
       </div>
       <div class="meta" style="gap:8px">
-        ${it.cocinado ? '' : `<button type="button" class="btn small ghost" data-act="cook" data-k="${it.k}">Ya lo cociné</button>`}
-        ${(mealOf(r) || r.tipos.includes('snack')) ? (() => { const mx = Math.max(1, leftOf(it)); const n = Math.min(eatN[it.k] || 1, mx); return `<span class="stepper sm"><button type="button" data-act="eatn" data-k="${it.k}" data-d="-1" aria-label="Una ración menos" ${n <= 1 ? 'disabled' : ''}>−</button><b>${n}</b><button type="button" data-act="eatn" data-k="${it.k}" data-d="1" aria-label="Una ración más" ${n >= mx ? 'disabled' : ''}>+</button></span><button type="button" class="btn small" data-act="eat" data-k="${it.k}" data-n="${n}">Comí ${n}</button>`; })() : ''}
+        ${!it.cocinado && !canMake(it, 1) ? '<span class="small muted" style="flex:1">Aún no lo tienes: marca en Lista lo que falta para poder cocinarlo o comerlo.</span>' : ''}
+        ${it.cocinado || !canMake(it, it.veces) ? '' : `<button type="button" class="btn small ghost" data-act="cook" data-k="${it.k}">Ya lo cociné</button>`}
+        ${(mealOf(r) || r.tipos.includes('snack')) && (it.cocinado || canMake(it, 1)) ? (() => { const mx = Math.max(1, leftOf(it)); const n = Math.min(eatN[it.k] || 1, mx); return `<span class="stepper sm"><button type="button" data-act="eatn" data-k="${it.k}" data-d="-1" aria-label="Una ración menos" ${n <= 1 ? 'disabled' : ''}>−</button><b>${n}</b><button type="button" data-act="eatn" data-k="${it.k}" data-d="1" aria-label="Una ración más" ${n >= mx ? 'disabled' : ''}>+</button></span><button type="button" class="btn small" data-act="eat" data-k="${it.k}" data-n="${n}">Comí ${n}</button>`; })() : ''}
         <button type="button" class="link" data-act="remove" data-k="${it.k}">Quitar</button>
       </div>
       ${haveLine(r, it)}
@@ -554,7 +561,7 @@ function eatOne(it) {
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
 }
 function logMeal(t, n, c) {
-  S.log = (S.log || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour(), n: n || '', c: r2(c || 0) });
+  S.log = (S.log || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour(), n: n || '', c: r2(c || 0), v: 2 });
   if (S.pushId && t && PROXY) pushPost('push/comi', { id: S.pushId, comida: t }).catch(() => {});
 }
 function mealByHour(d = new Date()) { const h = d.getHours() + d.getMinutes() / 60; return h >= 5 && h < 11.5 ? 'desayuno' : h < 16.5 ? 'almuerzo' : h < 19.5 ? 'merienda' : 'cena'; }
@@ -584,10 +591,11 @@ document.addEventListener('click', ev => {
   else if (a === 'addone') S.plan.push({ k: S.seq++, rid: b.dataset.id, veces: 1, opc: false });
   else if (a === 'veces' && it) { const nv = Math.min(30, it.veces + Number(b.dataset.d)); if (nv < 1) S.plan = S.plan.filter(p => p !== it); else it.veces = nv; }
   else if (a === 'remove' && it) { if (it.cocinado && leftOf(it) > 0 && b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = `¿Quitar? Se pierden ${leftOf(it)} raciones cocinadas`; return; } S.plan = S.plan.filter(p => p !== it); }
-  else if (a === 'cook' && it) { const m = deductMsg(cook(it)); toast('Cocinado: ' + byId(it.rid).n + '. ' + (m || 'Despensa actualizada')); }
+  else if (a === 'cook' && it) { if (!canMake(it, it.veces)) return toast('Te faltan ingredientes: primero cómpralos desde la Lista'); const m = deductMsg(cook(it)); toast('Cocinado: ' + byId(it.rid).n + '. ' + (m || 'Despensa actualizada')); }
   else if (a === 'eatn' && it) { eatN[it.k] = Math.max(1, Math.min(Math.max(1, leftOf(it)), (eatN[it.k] || 1) + Number(b.dataset.d))); renderSemana(); return; }
   else if (a === 'eat' && it) {
-    const r = byId(it.rid); const n = Math.max(1, Math.min(Number(b.dataset.n) || 1, Math.max(1, leftOf(it))));
+    const r = byId(it.rid); let n = Math.max(1, Math.min(Number(b.dataset.n) || 1, Math.max(1, leftOf(it))));
+    if (!it.cocinado) { n = Math.min(n, maxMake(it, n)); if (n < 1) return toast('Te faltan ingredientes: primero cómpralos desde la Lista'); }
     lastDeduct = null; const msgs = [];
     for (let i = 0; i < n && S.plan.includes(it); i++) { eatOne(it); const m = deductMsg(lastDeduct); if (m) msgs.push(m); lastDeduct = null; }
     delete eatN[it.k]; render(); if (msgs.length) toast(msgs[msgs.length - 1]); return enjoyed(n, r);
@@ -1191,6 +1199,8 @@ $('#dlg-welcome').addEventListener('click', ev => {
 $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
 
 /* ---------- Arranque ---------- */
+// Una sola vez: lo anotado antes de corregir el cálculo (comidas valoradas sin tener los ingredientes) no cuadra con el gasto
+if (!S.logFix && (S.log || []).some(x => x.v !== 2 && x.t !== 'snack')) { S.log = S.log.filter(x => x.v === 2 || x.t === 'snack'); S.logFix = 1; setTimeout(() => toast('He limpiado lo comido anotado antes de la corrección: no cuadraba con el gasto'), 800); } else S.logFix = 1;
 render();
 if (!S.name) openWelcome();
 checkReminders(); mirrorState(); setTimeout(() => syncCommunity(false), 1500);
