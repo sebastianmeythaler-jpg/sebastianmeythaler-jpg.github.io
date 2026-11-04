@@ -99,6 +99,8 @@ function buildCats(s) {
 }
 
 /* ---------- Estado ---------- */
+// Red de seguridad: la primera vez que se abre la app cada día se guarda una copia del estado del día anterior (antes de cualquier ajuste)
+try { const raw = localStorage.getItem(KEY); const hoy = new Date().toISOString().slice(0, 10); if (raw && localStorage.getItem(KEY + '-dia') !== hoy) { localStorage.setItem(KEY + '-prev', raw); localStorage.setItem(KEY + '-dia', hoy); } } catch (e) {}
 let S = load(); S.rq = '';
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
@@ -697,6 +699,7 @@ function openSettings() {
       <button type="button" class="btn ghost" id="st-export">Exportar copia</button>
       <button type="button" class="btn ghost" id="st-import">Importar copia</button>
     </div>
+    ${(() => { try { return localStorage.getItem(KEY + '-prev') ? '<button type="button" class="btn ghost wide" id="st-restore">Restaurar copia automática (estado de antes de hoy)</button>' : ''; } catch (e) { return ''; } })()}
     ${installEvt ? '<button type="button" class="btn wide" id="st-install">Instalar en el móvil</button>' : ''}
     <button type="button" class="btn wide" id="st-save">Guardar</button>
     <button type="button" class="link" id="st-reset" style="justify-self:center">Borrar todos los datos</button>
@@ -722,6 +725,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tandas-copia-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Copia descargada (sin tu clave de API)');
   } else if (b.id === 'st-import') $('#file-backup').click();
+  else if (b.id === 'st-restore') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Se pierde lo de hoy. Pulsa otra vez'; return; } try { localStorage.setItem(KEY, localStorage.getItem(KEY + '-prev')); location.reload(); } catch (e) { toast('No pude restaurar la copia'); } }
   else if (b.id === 'st-test-push') { try { const r = await pushPost('push/prueba', { id: S.pushId }); toast(r.ok ? 'Aviso enviado: te llegará en unos segundos' : 'No llegó el aviso. Desactiva y activa los recordatorios'); } catch (e) { toast('Sin conexión con el servidor'); } }
   else if (b.id === 'st-install' && installEvt) { installEvt.prompt(); installEvt = null; }
   else if (b.id === 'st-reset') {
