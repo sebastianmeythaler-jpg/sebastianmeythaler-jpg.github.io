@@ -504,6 +504,7 @@ function renderDespensa() {
   const counts = S.CATS.map((c, ci) => items.filter(([n]) => catOf(n) === ci).length);
   const cat = S.invCat && S.CATS.some(c => c.name === S.invCat) ? S.invCat : '';
   let html = `<div class="inv-sum"><b>${items.length}</b> ${items.length === 1 ? 'producto' : 'productos'} en casa · ${counts.filter(Boolean).length} categorías</div>
+    ${items.length ? '<button type="button" class="btn wide ghost" data-act="ideas" style="margin-bottom:10px">¿Qué cocino con lo que tengo?</button>' : ''}
     <div class="chips inv-chips"><button type="button" class="chip" data-act="inv-cat" data-c="" aria-pressed="${!cat}">Todo · ${items.length}</button>${S.CATS.map((c, ci) => counts[ci] ? `<button type="button" class="chip" data-act="inv-cat" data-c="${esc(c.name)}" aria-pressed="${cat === c.name}">${esc(c.name)} · ${counts[ci]}</button>` : '').join('')}</div>
     <div class="add-row"><select class="sel" id="inv-prod" aria-label="Producto">${S.CATS.map(c => c.items.filter(n => S.P[n]).length ? `<optgroup label="${esc(c.name)}">${c.items.filter(n => S.P[n]).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '').join('')}</select>
     <input class="qty" id="inv-qty" type="number" min="0" inputmode="decimal" value="${sp.u === 'ud' ? 1 : sp.q}" aria-label="Cantidad"><span class="muted small" id="inv-unit">${sp.u}</span>
@@ -607,6 +608,7 @@ document.addEventListener('click', ev => {
     for (let i = 0; i < n && S.plan.includes(it); i++) { eatOne(it); const m = deductMsg(lastDeduct); if (m) msgs.push(m); lastDeduct = null; }
     delete eatN[it.k]; render(); if (msgs.length) toast(msgs[msgs.length - 1]); return enjoyed(n, r);
   }
+  else if (a === 'ideas') { IDEAS = null; renderIdeas(); $('#dlg-ideas').showModal(); return; }
   else if (a === 'mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); }
   else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
   else if (a === 'more') { S['more_' + b.dataset.t] = (S['more_' + b.dataset.t] || 30) + 30; renderRecetas(); return; }
@@ -1185,6 +1187,48 @@ async function enableReminders() {
 }
 setInterval(checkReminders, 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); else mirrorState(); });
+
+/* ---------- Ideas con lo que hay en la despensa ---------- */
+let IDEAS = null; // { ai: [...] | null, busy, err }
+function stockLines() { return Object.entries(S.stock).filter(([n, q]) => S.P[n] && q > 0 && !S.P[n].c).map(([n, q]) => `${n}: ${fmtQ(q, S.P[n].u)}`); }
+function cookableNow() {
+  return S.R.filter(r => r.i.length && r.i.some(x => !x[2] && !isC(x[0])) && canMake({ rid: r.id, opc: false, k: -1 }, 1))
+    .sort((a, b) => (S.mine.includes(b.id) ? 1 : 0) - (S.mine.includes(a.id) ? 1 : 0) || b.i.length - a.i.length).slice(0, 8);
+}
+function renderIdeas() {
+  const have = stockLines(); const rs = cookableNow();
+  let h = `<div class="sheet-head"><h2>¿Qué cocino con lo que tengo?</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>`;
+  if (!have.length) { $('#ideas-in').innerHTML = h + '<p class="lead">Tu despensa está vacía. Compra algo desde la Lista o añádelo a mano.</p>'; return; }
+  h += `<h3 style="margin:4px 0">Recetas que ya puedes hacer</h3>` + (rs.length ? `<div class="list">${rs.map(r => `<div class="card"><div class="card-head"><div><h3>${esc(r.n)}</h3><div class="small muted">${S.mine.includes(r.id) ? 'En tu recetario' : 'De Explorar'} · ${eur(perRacion(r, false))} por ración</div></div>${S.mine.includes(r.id) ? '' : `<button type="button" class="btn small" data-act="idea-mine" data-id="${r.id}">+ A mi recetario</button>`}</div></div>`).join('')}</div>` : '<p class="small muted">Con lo que tienes no te alcanza para ninguna receta completa. Prueba las ideas con IA: se inventan algo con lo que hay.</p>');
+  h += `<h3 style="margin:14px 0 4px">Ideas nuevas con IA</h3>`;
+  if (IDEAS && IDEAS.busy) h += '<p class="small muted">Pensando con lo que tienes…</p>';
+  else {
+    if (IDEAS && IDEAS.err) h += `<div class="check bad">${esc(IDEAS.err)}</div>`;
+    if (IDEAS && IDEAS.ai) h += IDEAS.ai.map(x => `<div class="card"><div class="card-head"><h3>${esc(x.nombre)}</h3></div><div class="small">Usas: ${esc((x.usas || []).join(', '))}</div>${(x.falta || []).length ? `<div class="small muted">Te faltaría: ${esc(x.falta.join(', '))}</div>` : '<div class="small muted">No te falta nada.</div>'}<p class="small" style="margin:6px 0 0">${esc(x.como || '')}</p></div>`).join('');
+    h += aiReady() ? `<button type="button" class="btn wide" data-act="idea-ai" style="margin-top:8px">${IDEAS && IDEAS.ai ? 'Dame otras ideas' : 'Sugerir con IA'}</button>` : '<p class="small muted">Para las ideas con IA hace falta configurarla en Ajustes.</p>';
+  }
+  $('#ideas-in').innerHTML = h;
+}
+async function askIdeas() {
+  const have = stockLines(); const spices = Object.keys(S.stock).filter(n => S.P[n] && S.P[n].c && S.stock[n] > 0);
+  const prev = IDEAS && IDEAS.ai ? IDEAS.ai.map(x => x.nombre) : [];
+  IDEAS = { ai: IDEAS && IDEAS.ai, busy: true }; renderIdeas();
+  const tool = { name: 'sugerir_comidas', description: 'Propone comidas que se pueden hacer con lo que hay en la despensa.', input_schema: { type: 'object', required: ['ideas'], properties: { ideas: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'object', required: ['nombre', 'usas', 'falta', 'como'], properties: { nombre: { type: 'string' }, usas: { type: 'array', items: { type: 'string' }, description: 'Productos de la despensa que usa, con la cantidad aproximada' }, falta: { type: 'array', items: { type: 'string' }, description: 'Máximo 2 ingredientes baratos y básicos que no estén en la despensa; vacío si no falta nada' }, como: { type: 'string', description: 'Cómo prepararlo en 2 frases' } } } } } } };
+  const prompt = `Estas son las cosas que tengo en casa (producto: cantidad):\n${have.join('\n')}\n${spices.length ? 'Especias y sazonadores que tengo: ' + spices.join(', ') + '.' : 'No tengo especias.'}
+Vivo en ${REG().name}. Sugiere de 3 a 5 comidas sencillas y baratas que pueda hacer MAYORMENTE con lo que hay, priorizando gastar lo que más cantidad tengo y combinando varios productos. No inventes que tengo cosas que no están en la lista; lo que falte va en "falta" (máximo 2 y básicos). Tengo cantidades para una persona.${prev.length ? ' No repitas estas: ' + prev.join(', ') + '.' : ''}`;
+  try {
+    const data = await claude({ tools: [tool], tool_choice: { type: 'tool', name: 'sugerir_comidas' }, messages: [{ role: 'user', content: prompt }] });
+    const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu || !Array.isArray(tu.input.ideas)) throw new Error('La IA no devolvió ideas. Inténtalo otra vez.');
+    IDEAS = { ai: tu.input.ideas };
+  } catch (e) { IDEAS = { ai: IDEAS && IDEAS.ai, err: e.message }; }
+  if ($('#dlg-ideas').open) renderIdeas();
+}
+$('#dlg-ideas').addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.close !== undefined) return $('#dlg-ideas').close();
+  if (b.dataset.act === 'idea-ai') askIdeas();
+  else if (b.dataset.act === 'idea-mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); save(); renderIdeas(); }
+});
 
 /* ---------- Bienvenida ---------- */
 function openWelcome() {
