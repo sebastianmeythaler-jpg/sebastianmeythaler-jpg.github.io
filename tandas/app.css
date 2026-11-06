@@ -315,3 +315,5 @@ details.months[open]>summary{margin-bottom:8px}
 .fit{border:1px solid var(--warn);border-radius:14px;padding:10px 12px;margin:0 0 12px;display:grid;gap:8px}
 .fit .btn{height:auto;min-height:40px;white-space:normal;text-align:left;padding:8px 12px}
 .quick{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px}
+
+.inv-qbox{display:contents}.inv-env{display:flex;flex-direction:column;gap:2px;color:var(--mid)}.inv-env .qty{width:90px}

@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.7 · 6 nov';
+const VERSION = '2.8 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -631,7 +631,8 @@ function renderDespensa() {
     ${items.length ? '<button type="button" class="btn wide ghost" data-act="ideas" style="margin-bottom:10px">¿Qué cocino con lo que tengo?</button>' : ''}
     <div class="chips inv-chips"><button type="button" class="chip" data-act="inv-cat" data-c="" aria-pressed="${!cat}">Todo · ${items.length}</button>${S.CATS.map((c, ci) => counts[ci] ? `<button type="button" class="chip" data-act="inv-cat" data-c="${esc(c.name)}" aria-pressed="${cat === c.name}">${esc(c.name)} · ${counts[ci]}</button>` : '').join('')}</div>
     <div class="add-row"><select class="sel" id="inv-prod" aria-label="Producto">${S.CATS.map(c => c.items.filter(n => S.P[n]).length ? `<optgroup label="${esc(c.name)}">${c.items.filter(n => S.P[n]).sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${esc(n)}" ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '').join('')}</select>
-    <input class="qty" id="inv-qty" type="number" min="0" inputmode="decimal" value="${sp.u === 'ud' ? 1 : sp.q}" aria-label="Cantidad"><span class="muted small" id="inv-unit">${sp.u}</span>
+    <select class="sel" id="inv-mode" aria-label="Cómo viene">${ENVASES.map(([k, l]) => `<option value="${k}" ${k === (S.invMode || 'paquete') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <span id="inv-qbox" class="inv-qbox">${invAddRow(sp)}</span>
     <button type="button" class="btn small" data-act="inv-add">Añadir</button></div>`;
   S.CATS.forEach((c, ci) => {
     if (cat && c.name !== cat) return;
@@ -646,6 +647,14 @@ function renderDespensa() {
   if (!items.length) html += '<div class="empty" style="border:0">Tu despensa está vacía. Añade productos arriba o escanea un ticket.</div>';
   html += `<div class="foot"><span>Valor en casa${cat ? ' · ' + esc(cat) : ''}</span><span class="num">≈ ${eur(total)}</span></div>`;
   $('#inv-list').innerHTML = html;
+}
+const ENVASES = [['suelto', 'Suelto / a granel'], ['paquete', 'Paquete'], ['lata', 'Lata'], ['bote', 'Bote o tarro'], ['botella', 'Botella o brik'], ['bolsa', 'Bolsa'], ['malla', 'Malla o bandeja']];
+function envLabel(e, n) { const x = (ENVASES.find(v => v[0] === e) || ['', 'Paquete'])[1].split(' ')[0].toLowerCase(); return n === 1 ? x : x === 'malla' ? 'mallas' : x + (/[aeiou]$/.test(x) ? 's' : 'es'); }
+function invAddRow(sp) {
+  const m = S.invMode || 'paquete', loose = m === 'suelto';
+  return loose ? `<input class="qty" id="inv-qty" type="number" min="0" inputmode="decimal" value="${sp.u === 'ud' ? 1 : sp.q}" aria-label="Cantidad"><span class="muted small" id="inv-unit">${sp.u}</span>`
+    : `<label class="small inv-env">Cuántos<input class="qty" id="inv-n" type="number" min="0" step="1" inputmode="numeric" value="1" aria-label="Cuántos envases"></label>
+       <label class="small inv-env">${sp.u === 'ud' ? 'Unidades' : sp.u === 'ml' ? 'ml' : 'Gramos'} por ${envLabel(m, 1)} <span class="muted">(opcional)</span><input class="qty" id="inv-each" type="number" min="0" inputmode="decimal" placeholder="${sp.q}" aria-label="Contenido de cada envase"></label>`;
 }
 function setView(v) {
   S.view = v;
@@ -777,7 +786,10 @@ document.addEventListener('click', ev => {
   else if (a === 'home-out') { const n = b.dataset.n; delete S.hstock[n]; S.hwant[n] = 1; toast(`${n} añadido a la lista`); }
   else if (a === 'home-add') { const n = $('#h-name').value.trim().replace(/^./, c => c.toUpperCase()); const q = Math.max(1, Math.round(Number($('#h-qty').value) || 1)); if (!n) return toast('Escribe el producto'); if (!S.HP[n]) S.HP[n] = { cat: $('#h-cat').value, f: 'Unidad', p: 0, t: 0 }; S.hstock[n] = (S.hstock[n] || 0) + q; delete S.hwant[n]; toast(`Añadido: ${q} × ${n}`); }
   else if (a === 'hbuy') { const n = b.dataset.n; S.hstock[n] = (S.hstock[n] || 0) + 1; delete S.hwant[n]; toast(`${n}: marcado como comprado`); }
-  else if (a === 'inv-add') { const n = $('#inv-prod').value; const q = Number($('#inv-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } S.invSel = n; toast(`Añadido: ${fmtQ(q, S.P[n].u)} de ${n}`); }
+  else if (a === 'inv-add') { const n = $('#inv-prod').value; const m = S.invMode || 'paquete';
+    const cnt = m === 'suelto' ? 0 : Number($('#inv-n').value) || 0, each = m === 'suelto' ? 0 : Number($('#inv-each').value) || (S.P[n] ? S.P[n].q : 0);
+    const q = m === 'suelto' ? Number($('#inv-qty').value) || 0 : r2(cnt * each);
+    if (m !== 'suelto' && Number($('#inv-each').value) > 0 && S.P[n] && !S.P[n].c && !S.P[n].t) { const p = S.P[n]; p.p = r2(p.p / p.q * each); p.q = each; } if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } S.invSel = n; toast(`Añadido: ${m === 'suelto' ? '' : cnt + ' ' + envLabel(m, cnt) + ' · '}${fmtQ(q, S.P[n].u)} de ${n}`); }
   else if (a === 'del-ticket') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Borrar?'; return; } const tk = S.tickets.find(t => t.id === b.dataset.id); let undone = 0;
     for (const l of (tk && tk.lineas) || []) {
       if (l.producto && l.inv > 0 && S.P[l.producto]) { const v = (S.stock[l.producto] || 0) - l.inv; if (v > 1e-6) S.stock[l.producto] = r2(v); else delete S.stock[l.producto]; undone++; }
@@ -791,7 +803,7 @@ document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.id === 'only-tanda') S.onlyTanda = t.checked;
   else if (t.id === 'sn-prod') { S.snackSel = t.value; $('#sn-unit').textContent = S.P[t.value].u; $('#sn-qty').value = snackDefault(t.value); save(); return; }
-  else if (t.id === 'inv-prod') { S.invSel = t.value; const p = S.P[t.value]; $('#inv-unit').textContent = p.u; $('#inv-qty').value = p.u === 'ud' ? 1 : p.q; save(); return; }
+  else if (t.id === 'inv-prod' || t.id === 'inv-mode') { if (t.id === 'inv-prod') S.invSel = t.value; else S.invMode = t.value; $('#inv-qbox').innerHTML = invAddRow(S.P[$('#inv-prod').value]); save(); return; }
   else if (t.dataset.act === 'opc') { const it = S.plan.find(p => String(p.k) === t.dataset.k); if (it) it.opc = t.checked; }
   else if (t.dataset.act === 'cart') { S.cart = S.cart || {}; if (t.checked) S.cart[t.dataset.n] = 1; else delete S.cart[t.dataset.n]; }
   else if (t.dataset.act === 'have') { const n = t.dataset.n; if (t.checked) { S.stock[n] = Math.max(S.stock[n] || 0, Number(t.dataset.need)); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } } else delete S.stock[n]; }
@@ -999,13 +1011,15 @@ function renderReview() {
       return `<p class="small" style="margin:0">${bad ? `Hay <b>${bad}</b> ${bad === 1 ? 'línea' : 'líneas'} que conviene revisar (en naranja). Lo demás está bien: puedes guardar directamente.` : 'Todo parece correcto. Si algo no cuadra, toca «Cambiar».'}</p>`; })()}
     ${RV.lineas.map((l, i) => { const p = S.P[l.producto];
       const isOk = !l.open && (l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && S.P[l.producto] && Number(l.importe) > 0 && Number(l.inv) > 0));
-      if (isOk) return `<div class="rv-mini"><span class="ok">✓</span><span class="t"><b>${esc(l.tipo === 'Hogar' ? (l.hprod || l.desc) : l.tipo === 'Extra' ? l.desc : l.producto)}</b><small>${l.tipo === 'Hogar' ? 'Para casa' : l.tipo === 'Extra' ? 'Extra · ' + esc(l.grupo || '') : 'A la despensa: ' + fmtQ(Number(l.inv), p.u)}</small></span><span class="num">${eur(Number(l.importe) || 0)}</span><button type="button" class="link" data-rvopen="${i}">Cambiar</button></div>`;
-      return `<div class="rv rv-attn">${!l.producto && l.tipo === 'De la lista' ? '<p class="small" style="margin:0 0 6px;color:var(--mid)">¿Qué producto es? Elígelo, o cambia el tipo a «Extra» si fue un capricho.</p>' : ''}
+      if (isOk && !l.man) return `<div class="rv-mini"><span class="ok">✓</span><span class="t"><b>${esc(l.tipo === 'Hogar' ? (l.hprod || l.desc) : l.tipo === 'Extra' ? l.desc : l.producto)}</b><small>${l.tipo === 'Hogar' ? 'Para casa' : l.tipo === 'Extra' ? 'Extra · ' + esc(l.grupo || '') : 'A la despensa: ' + (l.env && l.env !== 'suelto' ? l.uds + ' ' + envLabel(l.env, l.uds) + ' · ' : '') + fmtQ(Number(l.inv), p.u)}</small></span><span class="num">${eur(Number(l.importe) || 0)}</span><button type="button" class="link" data-rvopen="${i}">Cambiar</button></div>`;
+      return `<div class="rv ${isOk ? '' : 'rv-attn'}">${!l.producto && l.tipo === 'De la lista' ? '<p class="small" style="margin:0 0 6px;color:var(--mid)">¿Qué producto es? Elígelo, o cambia el tipo a «Extra» si fue un capricho.</p>' : ''}
       <div class="rv-top"><input data-i="${i}" data-f="desc" value="${esc(l.desc)}" aria-label="Descripción"><button type="button" class="icon-btn" data-rvdel="${i}" aria-label="Quitar línea" style="width:36px;height:36px">✕</button></div>
       <div class="rv-grid">
         ${l.tipo === 'Hogar' ? `<label>Producto de casa<input data-i="${i}" data-f="hprod" list="h-names-rv" value="${esc(l.hprod || l.desc)}"></label>` : `<label>Producto<select data-i="${i}" data-f="producto">${prodOptions(l.producto)}</select></label>`}
         <label>Importe (${SYM()})<input type="number" step="0.01" inputmode="decimal" data-i="${i}" data-f="importe" value="${l.importe}"></label>
-        <label>Unidades<input type="number" min="0" step="1" data-i="${i}" data-f="uds" value="${l.uds}"></label>
+        <label>${l.tipo === 'De la lista' && l.env && l.env !== 'suelto' ? 'Cuántos (' + envLabel(l.env, 2) + ')' : 'Unidades'}<input type="number" min="0" step="1" data-i="${i}" data-f="uds" value="${l.uds}"></label>
+        ${l.tipo === 'De la lista' ? `<label>Cómo viene<select data-i="${i}" data-f="env">${ENVASES.map(([k, t]) => `<option value="${k}" ${k === (l.env || 'paquete') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        ${(l.env || 'paquete') !== 'suelto' && p ? `<label>${p.u === 'ud' ? 'Unidades' : p.u === 'ml' ? 'ml' : 'Gramos'} por ${envLabel(l.env || 'paquete', 1)} <span class="muted">(opcional)</span><input type="number" min="0" inputmode="decimal" data-i="${i}" data-f="each" value="${l.each || ''}" placeholder="${p.q}"></label>` : ''}` : ''}
         ${l.tipo === 'Hogar' ? `<label>Categoría<select data-i="${i}" data-f="hcat">${HCATS.map(c => `<option ${c === l.hcat ? 'selected' : ''}>${c}</option>`).join('')}</select></label>` : `<label>A la despensa (${p ? p.u : '—'})<input type="number" min="0" inputmode="decimal" data-i="${i}" data-f="inv" value="${l.inv}" ${p ? '' : 'disabled'}></label>`}
         <label>Tipo<select data-i="${i}" data-f="tipo"><option ${l.tipo === 'De la lista' ? 'selected' : ''}>De la lista</option><option ${l.tipo === 'Extra' ? 'selected' : ''}>Extra</option><option value="Hogar" ${l.tipo === 'Hogar' ? 'selected' : ''}>Hogar (no es comida)</option></select></label>
         ${l.tipo === 'Extra' ? `<label>Grupo<select data-i="${i}" data-f="grupo">${EXTRA_GROUPS.map(g => `<option ${g === l.grupo ? 'selected' : ''}>${g}</option>`).join('')}</select></label>` : ''}
@@ -1064,9 +1078,9 @@ $('#dlg-scan').addEventListener('click', ev => {
     S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Compra (solo total)', est: true, total: r2(tot), lineas });
     $('#dlg-scan').close(); render(); toast(`Apuntado: ${eur(tot)}. Lo de tu lista ya está en la despensa`);
   }
-  else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); }
+  else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); }
   else if (b.dataset.rvdel !== undefined) { RV.lineas.splice(Number(b.dataset.rvdel), 1); renderReview(); }
-  else if (b.id === 'rv-add') { RV.lineas.push({ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }); renderReview(); }
+  else if (b.id === 'rv-add') { RV.lineas.push({ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }); renderReview(); }
   else if (b.dataset.rvopen !== undefined) { RV.lineas[Number(b.dataset.rvopen)].open = true; renderReview(); }
   else if (b.id === 'rv-save') saveReview();
 });
@@ -1074,16 +1088,15 @@ $('#dlg-scan').addEventListener('change', ev => {
   const t = ev.target; if (!RV) return;
   if (t.dataset.rv) { RV[t.dataset.rv] = t.dataset.rv === 'total' ? Number(t.value) || 0 : t.value; if (t.dataset.rv === 'total') renderReview(); return; }
   if (t.dataset.i === undefined) return;
-  const l = RV.lineas[Number(t.dataset.i)]; const f = t.dataset.f; const num = ['importe', 'uds', 'inv'].includes(f);
+  const l = RV.lineas[Number(t.dataset.i)]; const f = t.dataset.f; const num = ['importe', 'uds', 'inv', 'each'].includes(f);
   l[f] = num ? Number(t.value) || 0 : t.value;
-  if (f === 'producto' && S.P[l.producto]) l.inv = (l.uds || 1) * S.P[l.producto].q;
-  if (f === 'uds' && S.P[l.producto]) l.inv = (l.uds || 1) * S.P[l.producto].q;
+  if (['producto', 'uds', 'each', 'env'].includes(f) && S.P[l.producto] && (l.env || 'paquete') !== 'suelto') l.inv = r2((l.uds || 1) * (l.each || S.P[l.producto].q));
   if (f === 'hprod' && S.HP[l.hprod]) l.hcat = S.HP[l.hprod].cat;
-  if (['producto', 'tipo', 'importe', 'uds', 'hprod'].includes(f)) renderReview();
+  if (['producto', 'tipo', 'importe', 'uds', 'hprod', 'env', 'each'].includes(f)) renderReview();
 });
 for (const id of ['#file-cam', '#file-gal']) $(id).addEventListener('change', ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-  if (!aiReady()) { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); toast('Sin IA configurada: apúntalo a mano'); return; }
+  if (!aiReady()) { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); toast('Sin IA configurada: apúntalo a mano'); return; }
   readTicket(f);
 });
 
