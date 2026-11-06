@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.1 · 6 nov';
+const VERSION = '2.2 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -857,6 +857,10 @@ function renderReview() {
     <button type="button" class="btn wide" id="rv-save">Guardar ticket y actualizar despensa</button>`;
 }
 function saveReview() {
+  if (!RV.lineas.some(l => l.desc || Number(l.importe) > 0)) { toast('El ticket está vacío: añade al menos una línea o cierra sin guardar'); return; }
+  const tot0 = r2(Number(RV.total) || RV.lineas.reduce((a, l) => a + (Number(l.importe) || 0), 0));
+  const dup = S.tickets.find(t => t.fecha === RV.fecha && Math.abs(t.total - tot0) < 0.01);
+  if (dup && !RV.dupOk) { RV.dupOk = true; toast(`Ojo: ya guardaste un ticket de ${eur(dup.total)} con esta fecha. Si es otro distinto, pulsa Guardar otra vez`); const btn = $('#rv-save'); if (btn) btn.textContent = 'Es otro ticket: guardar igualmente'; return; }
   const id = 't' + Date.now(); const lineas = []; const learn = [];
   for (const l of RV.lineas) {
     if (!l.desc && !l.importe) continue;
@@ -967,7 +971,7 @@ function runTool(name, x) {
     for (const g of ings) {
       const p = S.P[g.producto]; const q = Math.max(0, Number(g.cantidad) || 0); if (!q) continue;
       if (p.c) { cost += q * (p.p / (p.g || 1)); continue; } // especias: coste por gramos, no se descuentan botes
-      const have = S.stock[g.producto] || 0; cost += q * ucost(p);
+      const have = S.stock[g.producto] || 0; cost += Math.min(q, have) * ucost(p); // solo cuesta lo que había en casa
       const v = have - q; if (v > 1e-6) S.stock[g.producto] = r2(v); else delete S.stock[g.producto];
       left.push(`${g.producto}: quedan ${fmtQ(Math.max(0, v), p.u)}${have < q - 1e-6 ? ' (no tenías tanto)' : ''}`);
     }
