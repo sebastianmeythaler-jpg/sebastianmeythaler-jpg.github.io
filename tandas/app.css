@@ -288,3 +288,12 @@ details.adv[open]{display:grid;gap:10px}
 .dish .d1{font-size:28px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
 .dish .d2{position:absolute;right:-4px;bottom:-4px;font-size:18px;line-height:1;background:var(--card);border-radius:50%;padding:2px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .how .num .km{display:block;font-size:12px;color:var(--accent);font-weight:700;text-align:right}
+
+/* Historial mensual */
+details.months>summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}
+details.months>summary::-webkit-details-marker{display:none}
+details.months[open]>summary{margin-bottom:8px}
+.mrow{border-top:1px solid var(--line);padding:8px 0;display:grid;gap:4px}
+.mrow .mh{display:flex;justify-content:space-between;gap:8px}
+.mbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--card2)}
+.ok-t{color:var(--ok)} .bad-t{color:var(--warn)}

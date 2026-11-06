@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.5 · 6 nov';
+const VERSION = '2.6 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -337,10 +337,61 @@ function renderDetails(si, pend) {
     <div class="meals3">${MEALS.map(([k, l, c]) => `<div class="meal"><span>${l}</span><b>${cnt[k]}<small>/${S.target[k]}</small></b><div class="ln"><i style="width:${S.target[k] ? Math.min(100, cnt[k] / S.target[k] * 100) : 0}%;background:${c}"></i></div></div>`).join('')}</div>
     ${ideas ? `<p class="small muted" style="margin:0">Por ejemplo: ${ideas}</p>` : ''}
   </section>
+  ${monthsPanel()}
   <section class="panel" aria-label="Tickets de la semana">
     <h3>Tickets de la semana</h3>
     ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
   </section>`;
+}
+
+/* ---------- Historial mensual ---------- */
+const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const monthName = k => { const [y, m] = k.split('-').map(Number); return MES[m - 1].replace(/^./, c => c.toUpperCase()) + ' ' + y; };
+function calcMonth(k) {
+  const o = { comida: 0, extras: 0, hogar: 0, comido: 0, comidas: 0, tickets: 0 };
+  for (const t of S.tickets || []) { if (!String(t.fecha).startsWith(k)) continue; o.tickets++;
+    for (const l of t.lineas || []) { const v = Number(l.importe) || 0; if (l.tipo === 'Hogar') o.hogar += v; else if (l.tipo === 'Extra') o.extras += v; else o.comida += v; }
+    const sumL = (t.lineas || []).reduce((a, l) => a + (Number(l.importe) || 0), 0); if (!t.lineas || !t.lineas.length) o.comida += Number(t.total) || 0; else if (Math.abs((Number(t.total) || 0) - sumL) > 0.01 && t.total > sumL) o.extras += t.total - sumL; }
+  for (const x of S.log || []) { if (monthKey(new Date(x.ts)) !== k) continue; o.comido += x.c || 0; if (x.t !== 'snack') o.comidas++; }
+  for (const f of ['comida', 'extras', 'hogar', 'comido']) o[f] = r2(o[f]); return o;
+}
+// Guarda una foto de cada mes (aunque luego se borren registros viejos) y la actualiza si hay datos nuevos
+function updateMonths() {
+  S.months = S.months || {}; const keys = new Set([monthKey(new Date())]);
+  for (const t of S.tickets || []) keys.add(String(t.fecha).slice(0, 7)); for (const x of S.log || []) keys.add(monthKey(new Date(x.ts)));
+  for (const k of keys) { if (!/^\d{4}-\d{2}$/.test(k)) continue; const c = calcMonth(k); const old = S.months[k];
+    S.months[k] = old ? { ...c, comido: r2(Math.max(c.comido, old.comido || 0)), comidas: Math.max(c.comidas, old.comidas || 0) } : c; }
+}
+function monthBudget(k) { const [y, m] = k.split('-').map(Number); const days = new Date(y, m, 0).getDate(); return r2(S.budget * days / 7); }
+function monthsPanel() {
+  updateMonths(); const ks = Object.keys(S.months || {}).sort().reverse(); if (!ks.length) return '';
+  const cur = monthKey(new Date()); const max = Math.max(...ks.map(k => S.months[k].comida + S.months[k].extras), 1);
+  return `<section class="panel" aria-label="Historial por meses"><details class="months" ${S.monthsOpen ? 'open' : ''}><summary><h3 style="margin:0">Tus gastos por mes</h3><span class="small muted">${ks.length} ${ks.length === 1 ? 'mes' : 'meses'}</span></summary>
+    ${ks.map(k => { const m = S.months[k]; const tot = r2(m.comida + m.extras); const pb = monthBudget(k); const over = tot > pb;
+      return `<div class="mrow"><div class="mh"><b>${monthName(k)}${k === cur ? ' <span class="muted small">(en curso)</span>' : ''}</b><span class="num">${eur(tot)}</span></div>
+      <div class="mbar"><i style="width:${m.comida / max * 100}%;background:var(--accent)"></i><i style="width:${m.extras / max * 100}%;background:var(--warn)"></i></div>
+      <div class="small muted">Lista ${eur(m.comida)} · Caprichos ${eur(m.extras)}${m.hogar ? ` · Casa ${eur(m.hogar)}` : ''} · Comido ${eur(m.comido)}${m.comidas ? ` (${m.comidas} comidas, ${eur(m.comido / m.comidas)} de media)` : ''}</div>
+      <div class="small ${over ? 'bad-t' : 'ok-t'}">${k === cur ? `Presupuesto del mes ≈ ${eur(pb)}` : over ? `Te pasaste ${eur(tot - pb)} del presupuesto (${eur(pb)})` : `Ahorraste ${eur(pb - tot)} frente al presupuesto (${eur(pb)})`}</div></div>`; }).join('')}
+  </details></section>`;
+}
+// Resumen al cerrar el mes: el último día por la noche o al abrir la app ya en el mes siguiente
+function monthEndCheck() {
+  const now = new Date(); const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  let k = null;
+  if (now.getDate() === last && now.getHours() >= 20) k = monthKey(now);
+  else { const prev = new Date(now.getFullYear(), now.getMonth() - 1, 15); k = monthKey(prev); }
+  if (!k || S.monthShown === k || S.monthShown > k) return; updateMonths(); const m = (S.months || {})[k]; if (!m || !(m.tickets || m.comidas)) return;
+  S.monthShown = k; save();
+  const tot = r2(m.comida + m.extras); const pb = monthBudget(k);
+  $('#pop-in').innerHTML = `<div class="pop-emoji" aria-hidden="true">📊</div><h2>Tu resumen de ${monthName(k).split(' ')[0]}</h2>
+    <p>Gastaste <b>${eur(tot)}</b> en comida${m.extras ? ` (de eso, ${eur(m.extras)} en caprichos)` : ''}.</p>
+    <p class="small">${tot > pb ? `Te pasaste ${eur(tot - pb)} de tu presupuesto del mes (${eur(pb)}).` : `¡Bien! Te quedaste ${eur(pb - tot)} por debajo de tu presupuesto del mes (${eur(pb)}).`}</p>
+    ${m.comidas ? `<p class="small muted">Anotaste ${m.comidas} comidas, a ${eur(m.comido / m.comidas)} de media.${m.hogar ? ` En cosas de casa: ${eur(m.hogar)}.` : ''}</p>` : ''}
+    <p class="small muted">Queda guardado en el resumen de arriba → «Tus gastos por mes».</p>
+    <button type="button" class="btn wide" data-close>Entendido</button>`;
+  $('#dlg-pop').showModal();
+  try { if ('Notification' in window && Notification.permission === 'granted' && document.hidden) navigator.serviceWorker.ready.then(r => r.showNotification('Tandas', { body: `Resumen de ${monthName(k)}: gastaste ${eur(tot)} en comida.`, icon: 'icons/icon-192.png', tag: 'tandas-mes' })); } catch (e) {}
 }
 
 /* ---------- Render: recetas ---------- */
@@ -724,6 +775,7 @@ document.addEventListener('change', ev => {
   render();
 });
 document.addEventListener('toggle', ev => {
+  if (ev.target.classList && ev.target.classList.contains('months')) { S.monthsOpen = ev.target.open; save(); return; }
   const g = ev.target; if (g.dataset && g.dataset.group) { const set = new Set(S.openGroups || []); const was = set.has(g.dataset.group); g.open ? set.add(g.dataset.group) : set.delete(g.dataset.group); S.openGroups = [...set]; save(); if (g.open && !was && !g.querySelector('article')) renderRecetas(); return; }
   const d = ev.target; if (!d.dataset || !d.dataset.how) return; const set = new Set(S.openHow); d.open ? set.add(d.dataset.how) : set.delete(d.dataset.how); S.openHow = [...set]; save();
 }, true);
@@ -1367,7 +1419,7 @@ $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
 /* ---------- Arranque ---------- */
 render();
 if (!S.name) openWelcome();
-checkReminders(); mirrorState(); setTimeout(() => syncCommunity(false), 1500);
+checkReminders(); mirrorState(); setTimeout(() => { if (!$('#dlg-welcome').open && !$('#dlg-pop').open) monthEndCheck(); }, 1200); setTimeout(() => syncCommunity(false), 1500);
 $('#dlg-pop').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b && ev.target !== ev.currentTarget) return;
   const off = $('#pop-off'); if (off && off.checked) { S.enjoyPopup = false; save(); toast('Vale, no te lo vuelvo a mostrar. Puedes reactivarlo en Ajustes'); }
