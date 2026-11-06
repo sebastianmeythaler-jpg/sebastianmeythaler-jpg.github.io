@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.8 · 7 nov';
+const VERSION = '2.8.1 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -191,13 +191,14 @@ function shop(plan) {
     const p = S.P[n]; if (!p) continue;
     const have = S.stock[n] || 0; const toBuy = Math.max(0, need - have);
     const packs = toBuy > 1e-6 ? Math.ceil(toBuy / p.q - 1e-9) : 0; const cost = packs * p.p;
-    consumo += need * p.p / p.q; total += cost; if (packs) sobra += (packs * p.q - toBuy) * p.p / p.q;
+    consumo += need * p.p / p.q; total += cost; sobra += Math.max(0, have + packs * p.q - need) * ucost(p);
     rows.push({ n, need, have, packs, cost, p });
   }
   for (const n of needsC(plan)) {
     const p = S.P[n]; if ((S.stock[n] || 0) > 0 && !S.want[n]) { rows.push({ n, need: 1, have: S.stock[n], packs: 0, cost: 0, p, cons: true }); continue; }
     total += p.p; consumo += p.p; rows.push({ n, need: 1, have: 0, packs: 1, cost: p.p, p, cons: true });
   }
+  for (const n of Object.keys(S.stock)) { const p = S.P[n]; if (p && !p.c && !m.has(n) && S.stock[n] > 0) sobra += S.stock[n] * ucost(p); }  // lo que no usa tu semana también se queda en casa
   rows.sort((a, b) => (a.packs === 0) - (b.packs === 0) || b.cost - a.cost);
   return { rows, total, consumo, sobra };
 }
@@ -536,7 +537,7 @@ function renderSemana() {
   renderSnacks();
   const s = shop(S.plan); const e = eq();
   renderEaten();
-  $('#s-compra').textContent = eur(s.total); $('#s-sobra').textContent = eur(s.sobra);
+  $('#s-compra').textContent = S.plan.length && s.total < 0.005 ? 'Nada ✓' : eur(s.total); $('#s-sobra').textContent = eur(s.sobra);
   const el = $('#plan-list');
   if (!S.plan.length) { el.innerHTML = '<div class="empty">Tu semana está vacía. Añade platos con el botón + del recetario.</div>'; return; }
   el.innerHTML = S.plan.map(it => {
