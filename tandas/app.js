@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.8.1 · 7 nov';
+const VERSION = '2.8.2 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -737,6 +737,9 @@ document.addEventListener('click', ev => {
   if (b.id === 'btn-scan') return openScan();
   if (b.id === 'btn-ai') return openAI();
   if (b.dataset.view) { setView(b.dataset.view); save(); window.scrollTo({ top: 0 }); return; }
+  if (b.id === 'btn-compra') { const t = shop(S.plan).total;
+    $('#pop-in').innerHTML = `<div class="pop-emoji" aria-hidden="true">🛒</div><h2>¿Ir a tu Lista de compras?</h2><p>${t > 0.005 ? `Ahí verás qué te falta comprar para tu semana (${eur(t)}).` : 'Ya tienes todo lo de tu semana, pero ahí puedes repasar la lista.'}</p><button type="button" class="btn wide" data-view="lista">Sí, ir a la Lista</button><button type="button" class="btn ghost wide" data-close style="margin-top:8px">No, quedarme aquí</button>`;
+    $('#dlg-pop').showModal(); return; }
   if (b.id === 'btn-eaten') { S.eatenOpen = !S.eatenOpen; renderEaten(); save(); return; }
   if (b.id === 'seg-food' || b.id === 'seg-home') { S.invSeg = b.id === 'seg-home' ? 'home' : 'food'; render(); return; }
   if (b.id === 'seg-mine' || b.id === 'seg-explore') { S.seg = b.id === 'seg-mine' ? 'mine' : 'explore'; render(); return; }
