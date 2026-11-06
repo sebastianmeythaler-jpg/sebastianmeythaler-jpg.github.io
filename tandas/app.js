@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.0 · 4 nov';
+const VERSION = '2.1 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -925,6 +925,7 @@ const AI_TOOLS = [
   { name: 'anadir_a_semana', description: 'Añade platos de una receta al menú de la semana.', input_schema: { type: 'object', required: ['receta_id', 'platos'], properties: { receta_id: { type: 'string' }, platos: { type: 'integer', minimum: 1 } } } },
   { name: 'quitar_de_semana', description: 'Quita una receta del menú de la semana.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' } } } },
   { name: 'anotar_comida_fuera', description: 'Anota una comida o bebida que el usuario tomó y que NO sale de la despensa ni de una receta (restaurante, bar, comida de la calle, delivery, invitación pagada). Suma al gasto de la semana y a lo que come. Necesita el importe: si no lo dijo, pregúntaselo antes.', input_schema: { type: 'object', required: ['descripcion', 'importe'], properties: { descripcion: { type: 'string' }, importe: { type: 'number', description: 'Lo que pagó, en su moneda' }, comida: { type: 'string', enum: ['desayuno', 'almuerzo', 'merienda', 'cena', 'snack'] } } } },
+  { name: 'anotar_consumo', description: 'Anota una comida que el usuario preparó y se comió con productos sueltos de la despensa, sin receta (p. ej. "para el almuerzo usé 180 g de pollo, una tortilla y 2 huevos"). Descuenta cada producto de la despensa Y suma su coste a «Lo que comes». Úsala en vez de ajustar_despensa siempre que lo usado se lo haya comido.', input_schema: { type: 'object', required: ['comida', 'ingredientes'], properties: { comida: { type: 'string', enum: ['desayuno', 'almuerzo', 'merienda', 'cena', 'snack'] }, descripcion: { type: 'string', description: 'Nombre corto del plato, p. ej. "Wrap de pollo con huevo"' }, raciones: { type: 'integer', description: 'Cuántas raciones se comió de eso (por defecto 1)' }, ingredientes: { type: 'array', items: { type: 'object', required: ['producto', 'cantidad'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto' } } } } } } },
   { name: 'anotar_comida', description: 'Anota que el usuario se comió raciones de una receta. Descuenta de lo cocinado o, si era al momento, de la despensa.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' }, raciones: { type: 'integer', minimum: 1 } } } },
   { name: 'marcar_cocinado', description: 'Marca como cocinada la tanda de una receta de la semana y descuenta sus ingredientes.', input_schema: { type: 'object', required: ['receta_id'], properties: { receta_id: { type: 'string' } } } },
   { name: 'cambiar_presupuesto', description: 'Cambia el presupuesto semanal.', input_schema: { type: 'object', required: ['euros'], properties: { euros: { type: 'number' } } } },
@@ -958,6 +959,23 @@ function runTool(name, x) {
     return `OK. ${n}: ${v} en casa.`;
   }
   if (name === 'recordar_habito') { const t = String(x.nota || '').trim().slice(0, 160); if (!t) return 'Error: nota vacía.'; if ((S.habits || []).some(h => h.t.toLowerCase() === t.toLowerCase())) return 'Ya lo tenía apuntado.'; S.habits = (S.habits || []).concat({ t, ts: Date.now() }).slice(-40); return `OK. Apuntado: ${t}`; }
+  if (name === 'anotar_consumo') {
+    const ings = Array.isArray(x.ingredientes) ? x.ingredientes : []; if (!ings.length) return 'Error: faltan los ingredientes.';
+    const bad = ings.filter(g => !S.P[g.producto]).map(g => g.producto); if (bad.length) return `Error: no están en el catálogo: ${bad.join(', ')}. Usa nombres exactos o créalos antes con crear_producto.`;
+    let cost = 0; const left = [];
+    for (const g of ings) {
+      const p = S.P[g.producto]; const q = Math.max(0, Number(g.cantidad) || 0); if (!q) continue;
+      if (p.c) { cost += q * (p.p / (p.g || 1)); continue; } // especias: coste por gramos, no se descuentan botes
+      const have = S.stock[g.producto] || 0; cost += q * ucost(p);
+      const v = have - q; if (v > 1e-6) S.stock[g.producto] = r2(v); else delete S.stock[g.producto];
+      left.push(`${g.producto}: quedan ${fmtQ(Math.max(0, v), p.u)}${have < q - 1e-6 ? ' (no tenías tanto)' : ''}`);
+    }
+    const t = ['desayuno', 'almuerzo', 'merienda', 'cena', 'snack'].includes(x.comida) ? x.comida : mealByHour();
+    const desc = String(x.descripcion || ings.map(g => g.producto).join(', ')).slice(0, 80);
+    if (['desayuno', 'almuerzo', 'cena'].includes(t)) S.eaten[t] = (S.eaten[t] || 0) + 1;
+    logMeal(t, desc, cost);
+    return `OK. ${t[0].toUpperCase() + t.slice(1)}: ${desc} (${eur(cost)}) sumado a lo que comes. ${left.join('; ')}.`;
+  }
   if (name === 'anotar_snack') { const p = S.P[x.producto]; if (!p) return `Error: "${x.producto}" no está en el catálogo.`; const c = eatSnack(x.producto, Number(x.cantidad) || 0); return c === null ? 'Error: cantidad no válida.' : `OK. Snack: ${fmtQ(x.cantidad, p.u)} de ${x.producto} (${eur(c)}).`; }
   if (name === 'anadir_a_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; const it = S.plan.find(p => p.rid === r.id && !p.cocinado); if (it) it.veces += x.platos; else S.plan.push({ k: S.seq++, rid: r.id, veces: x.platos, opc: false }); if (!S.mine.includes(r.id)) S.mine.push(r.id); return `OK. ${r.n}: +${x.platos} platos en la semana.`; }
   if (name === 'quitar_de_semana') { const r = findR(x.receta_id); if (!r) return 'Error: receta no encontrada.'; S.plan = S.plan.filter(p => p.rid !== r.id); return `OK. ${r.n} quitada de la semana.`; }
@@ -1006,8 +1024,8 @@ function aiContext() {
   return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de ${S.name || 'la persona que usa la app'}.
 REGLA PRINCIPAL: atiende SOLO su último mensaje. La conversación anterior ya está procesada y sus cambios ya están guardados en la despensa: NUNCA repitas una acción de un mensaje anterior. Úsala solo para entender a qué se refiere ("la otra", "eso", "también").
 Precisión (muy importante):
-- Antes de tocar nada, identifica cada producto del catálogo, la cantidad y la operación. "Usé / puse / gasté X" = restar X. "Compré / me han dado X" = sumar X. "Me queda / tengo / hay X" = fijar X. "Me comí N de una receta" = anotar_comida (no restes además sus ingredientes). "Cociné la tanda" = marcar_cocinado.
-- Si dice qué le puso a un plato que se comió (p. ej. "en la faja puse 60 g de champiñones y mostaza"), resta esos ingredientes con ajustar_despensa uno por uno.
+- Antes de tocar nada, identifica cada producto del catálogo, la cantidad y la operación. "Usé / puse / gasté X" para comérselo = anotar_consumo (resta y suma el coste a lo que come); si no se lo comió (lo tiró, se estropeó) = ajustar_despensa restar. "Compré / me han dado X" = sumar X. "Me queda / tengo / hay X" = fijar X. "Me comí N de una receta" = anotar_comida (no restes además sus ingredientes). "Cociné la tanda" = marcar_cocinado.
+- Si dice qué le puso a un plato que se comió (p. ej. "en la faja puse 60 g de champiñones y mostaza"), anótalo con anotar_consumo (descripción "Extra en la faja", la misma comida) para que se reste y su coste cuente.
 - Conversiones: 1 kg = 1000 g; 1 L = 1000 ml; cucharada ≈ 15 g o ml; cucharadita ≈ 5; chorrito ≈ 10 ml; "un poco" de salsa ≈ 10 g; loncha de fiambre ≈ 15 g; loncha de queso = 1 ud; puñado ≈ 30 g; huevo = 1 ud. Usa la unidad del producto en el catálogo.
 - Si no encuentras el producto en el catálogo o hay dos que encajan igual, pregunta en una frase corta cuál es, en vez de adivinar. Si solo falta la cantidad, usa la conversión razonable y dila.
 - Al confirmar, da las cifras finales que devuelven las herramientas (cuánto queda), no las calcules tú.
@@ -1024,7 +1042,7 @@ Cómo hablas:
 Usa siempre los nombres exactos del catálogo y los id de receta en las herramientas, pero al hablar usa nombres normales.
 Consumibles: las especias, sazonadores y condimentos secos (pimienta, comino, ajo en polvo…) son consumibles. En la despensa se cuentan por botes, no por gramos, y no se descuentan al cocinar; en las recetas sí van en gramos para calcular el coste. Si creas un producto de este tipo, márcalo con consumible: true y su cantidad_formato son los gramos del bote. Los alimentos (carne, verdura, salsas, aceite, etc.) no son consumibles.
 Casa: lo que no es comida (champú, pasta de dientes, detergente, esponjas, fundas de basura…) va aparte, con ajustar_hogar, nunca en la despensa de comida ni en el presupuesto de comida. Productos de casa que tiene: ${Object.entries(S.hstock).map(([n, q]) => n + ': ' + q).join('; ') || 'ninguno'}.
-Comidas fuera: si cuenta que comió o bebió algo que no está en el menú ni sale de la despensa (restaurante, bar, calle, delivery), anótalo con anotar_comida_fuera; si no dijo cuánto pagó, pregúntaselo primero. Si lo preparó él con productos que tiene en la despensa pero sin receta, anota cada producto con anotar_snack.
+Comidas fuera: si cuenta que comió o bebió algo que no está en el menú ni sale de la despensa (restaurante, bar, calle, delivery), anótalo con anotar_comida_fuera; si no dijo cuánto pagó, pregúntaselo primero. Si lo preparó él con productos de la despensa sin receta ("para el almuerzo usé 180 g de pollo, una tortilla y 2 huevos"), usa UNA sola llamada a anotar_consumo con todos los ingredientes y la comida que corresponda: así se descuenta de la despensa y su coste cuenta en lo que come. No uses ajustar_despensa para comida que se ha comido; ajustar_despensa es solo para compras, correcciones o cosas que se tiraron.
 Snacks: si dice que ha picado algo entre horas (una barrita, un yogur, unas galletas), anótalo con anotar_snack.
 Recetas nuevas: si te cuenta una receta suya o te pide añadir una, guárdala con crear_receta sin pedir permiso. Si falta algún ingrediente en el catálogo, créalo antes con crear_producto (formato típico del súper y precio estimado en su moneda). Cantidades para toda la receta, en la unidad del producto. Si no dice raciones, pon 1 en desayunos y cenas al momento y 5 en tandas de almuerzo. Pasos cortos y claros. Si cambia algo de una receta ya creada, crea la versión nueva con el mismo nombre. Al terminar, confirma en una frase con el nombre, las raciones y lo que cuesta más o menos cada ración.
 Hoy: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
