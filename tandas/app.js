@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.3 · 6 nov';
+const VERSION = '2.4 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -78,6 +78,23 @@ function markCons(s) {
   }
   for (const n in s.P) if (s.P[n].c && (s.stock || {})[n] > 0 && !s.since[n]) s.since[n] = lastTicketDate(s, n) || Date.now();
 }
+// Biblioteca reducida: quita recetas de biblioteca que ya no están (salvo las que el usuario usa) y los productos que solo usaban ellas
+function pruneLibrary(s, seed) {
+  const libIds = new Set((window.LIBRARY && window.LIBRARY.R || []).map(r => r.id));
+  const inUse = new Set([...(s.mine || []), ...(s.plan || []).map(p => p.rid)]);
+  s.R = s.R.filter(r => !r.lib || libIds.has(r.id) || inUse.has(r.id));
+  for (const r of s.R) { const fresh = seed.R.find(x => x.id === r.id); if (fresh && (r.lib || r.id === 'banano')) { r.n = fresh.n; r.tipos = fresh.tipos.slice(); } }
+  for (const k of Object.keys(s.STEPS || {})) if (k.startsWith('lib-') && !s.R.find(r => r.id === k)) delete s.STEPS[k];
+  const used = new Set(s.R.flatMap(r => r.i.map(x => x[0])));
+  const aliasT = new Set(Object.values(s.alias || {}));
+  for (const n of Object.keys(s.P)) {
+    const p = s.P[n]; if (!p.cat || seed.P[n] && !(window.LIBRARY.P || {})[n] && !p.cat) continue;
+    const libOnly = p.cat && !(window.SEED.P || {})[n];
+    if (libOnly && !used.has(n) && !((s.stock || {})[n] > 0) && p.t !== 1 && !aliasT.has(n) && !(s.cart || {})[n] && !(s.want || {})[n]) {
+      delete s.P[n]; if (s.K) delete s.K[n]; for (const c of s.CATS || []) c.items = c.items.filter(x => x !== n);
+    }
+  }
+}
 function placeCats(s) {
   const inCat = new Set((s.CATS || []).flatMap(c => c.items));
   for (const n in s.P) {
@@ -108,6 +125,7 @@ function load() {
   for (const k in LIB.P) if (!seed.P[k]) seed.P[k] = JSON.parse(JSON.stringify(LIB.P[k]));
   for (const k in LIB.K) if (seed.K[k] === undefined) seed.K[k] = LIB.K[k];
   for (const r of LIB.R) if (!seed.R.find(x => x.id === r.id)) seed.R.push(JSON.parse(JSON.stringify(r)));
+  seed.libV = LIB.v || 1;
   Object.assign(seed.STEPS, LIB.STEPS);
   const ui = { view: 'recetas', seg: 'explore', filter: [], onlyTanda: false, openHow: [], detailsOpen: false, apiKey: '', code: '', name: '', region: 'ES', theme: 'grafito', snacks: [], habits: [], modelV: 1, invCat: '', invSeg: 'food', enjoyPopup: true, log: [], remind: { on: false, desayuno: '09:00', almuerzo: '14:00', cena: '22:00', sent: {} }, model: MODELS[0][0], chat: [] };
   let s = null;
@@ -123,6 +141,7 @@ function load() {
   for (const r of seed.R) if (!s.R.find(x => x.id === r.id)) s.R.push(r);
   for (const k in seed.STEPS) if (!s.STEPS[k]) s.STEPS[k] = seed.STEPS[k];
   for (const k in seed.K) if (s.K[k] === undefined) s.K[k] = seed.K[k];
+  pruneLibrary(s, seed);
   markCons(s); if (needCats) buildCats(s); placeCats(s); ensureHome(s);
   if (needModel) { s.model = 'claude-sonnet-5-5'; s.modelV = 1; }
   s.habits = s.habits || [];
