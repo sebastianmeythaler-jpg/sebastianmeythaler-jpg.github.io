@@ -297,3 +297,21 @@ details.months[open]>summary{margin-bottom:8px}
 .mrow .mh{display:flex;justify-content:space-between;gap:8px}
 .mbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--card2)}
 .ok-t{color:var(--ok)} .bad-t{color:var(--warn)}
+
+/* Letra grande y accesibilidad */
+:root.big main,:root.big .sheet-in,:root.big .pop-in{zoom:1.15}
+:root.big .top{position:relative}
+:root.big .top h1,:root.big .top .date{zoom:1.1}
+:root.big .nav a,:root.big .nav button.tab{font-size:13px}
+:root.big .nav svg{width:25px;height:25px}
+:root.big .chip{min-height:40px}
+:root.big .toast{font-size:16px}
+.chip{min-height:36px}
+.toast{cursor:pointer}
+.warn-t{color:var(--warn)!important;font-weight:700}
+.gloss{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--card2);font-size:13px;display:grid;gap:3px}
+.seg-legend span,.pill{font-size:13px}
+
+.fit{border:1px solid var(--warn);border-radius:14px;padding:10px 12px;margin:0 0 12px;display:grid;gap:8px}
+.fit .btn{height:auto;min-height:40px;white-space:normal;text-align:left;padding:8px 12px}
+.quick{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px}

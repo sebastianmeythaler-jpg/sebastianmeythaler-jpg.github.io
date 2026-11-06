@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.6 · 6 nov';
+const VERSION = '2.7 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -418,6 +418,11 @@ function kitchen(n, q, u) {
   const cda = ml / 15; if (cda >= 0.75) return frac(cda) + ' cda';
   const cdta = ml / 5; return cdta < 0.2 ? 'una pizca' : frac(cdta) + ' cdta';
 }
+const GLOSARIO = [[/\bdor(a|ar|ado|adas?)\b/i, 'Dorar', 'freír a fuego medio hasta que coja color tostado'], [/sofr[íi]e|sofrito/i, 'Sofreír', 'freír despacio en poco aceite, removiendo de vez en cuando'],
+  [/pocha/i, 'Pochar', 'freír a fuego bajo hasta que quede blandito, sin que se queme'], [/rehoga/i, 'Rehogar', 'mover en la sartén con un poco de aceite unos minutos'], [/gratin/i, 'Gratinar', 'poner el horno solo con el calor de arriba (grill) unos minutos para tostar el queso'],
+  [/baño maría/i, 'Baño maría', 'meter el molde dentro de una bandeja con agua caliente y hornear así'], [/salpimienta/i, 'Salpimentar', 'echar sal y pimienta'], [/\breduce\b|reducir/i, 'Reducir', 'dejar hervir sin tapa hasta que quede menos líquido'],
+  [/monta las claras|claras montadas|a punto de nieve/i, 'Montar claras', 'batir las claras hasta que estén blancas y firmes'], [/precalienta/i, 'Precalentar', 'encender el horno 10 minutos antes para que esté caliente'], [/escurr/i, 'Escurrir', 'quitar el agua o el aceite con un colador'], [/marina/i, 'Marinar', 'dejar la comida un rato en la salsa para que coja sabor']];
+function glosario(steps) { const f = GLOSARIO.filter(([re]) => steps.some(st => re.test(st))); return f.length ? `<div class="gloss"><b>Palabras de cocina</b>${f.map(([, w, d]) => `<div><b>${w}:</b> ${d}.</div>`).join('')}</div>` : ''; }
 function howTo(r, key, veces, k) {
   const open = S.openHow.includes(key); const e = eq(); const whole = !!r.tanda && r.rac > 1; // lo que se hornea o cocina de una vez: receta completa
   const mult = whole ? Math.max(1, Math.ceil(veces * e / r.rac)) : veces * e / r.rac; const raciones = whole ? mult * r.rac : veces * e;
@@ -425,7 +430,7 @@ function howTo(r, key, veces, k) {
   return `<details class="how" data-how="${key}" ${open ? 'open' : ''}><summary>Ingredientes y pasos</summary><div class="how-body">
     ${r.i.length ? `<h4>Ingredientes · ${whole ? 'receta completa, ' : ''}${raciones.toLocaleString('es-ES')} ${raciones === 1 ? 'ración' : 'raciones'}</h4>
     <ul>${r.i.map(([n, q, o]) => { const c = cov.find(x => x.n === n); const st = c ? (c.ok ? '<span class="st ok">en casa</span>' : `<span class="st miss">${c.c ? 'falta 1 bote' : 'falta ' + fmtQ(c.miss, S.P[n].u)}</span>`) : ''; return `<li><span>${esc(n)}${o ? ' <span class="muted">(opcional)</span>' : ''} ${st}</span><span class="num">${fmtQ(q * mult, rU(n))}${(m => m ? `<small class="km">${m}</small>` : '')(kitchen(n, q * mult, rU(n)))}</span></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">tz = taza (240 ml) · cda = cucharada sopera · cdta = cucharadita de café</p>` : ''}
-    <h4>Pasos</h4><ol>${(S.STEPS[r.id] || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div></details>`;
+    <h4>Pasos</h4><ol>${(S.STEPS[r.id] || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol>${glosario(S.STEPS[r.id] || [])}</div></details>`;
 }
 /* Dibujo del plato (como en la carta de un restaurante): emojis según el plato y sus ingredientes */
 const ART = [[/pizza/i, '🍕'], [/hamburgues/i, '🍔'], [/taco|faja|fajita|burrito|quesadilla|wrap|fajipizza/i, '🌯'], [/s[aá]ndwich|mixto/i, '🥪'], [/sopa|crema de (?!cacao|cacahuete)|potaje|chile|lentejas|garbanzos/i, '🍲'],
@@ -563,10 +568,24 @@ function homeBox() {
   const tot = ws.reduce((a, n) => a + (S.HP[n].p || 0), 0);
   return `<div class="cons-box home-box"><div class="gh"><span>Para casa</span><span class="num">≈ ${eur(tot)}</span></div>${ws.map(n => `<div class="cons-r" style="grid-template-columns:1fr auto;align-items:center"><div><div class="n">${esc(n)}</div><div class="d">${esc(S.HP[n].cat)} · ${esc(S.HP[n].f)}${S.HP[n].p ? ' · ≈ ' + eur(S.HP[n].p) : ''}</div></div><button type="button" class="btn small ghost" data-act="hbuy" data-n="${esc(n)}">Comprado</button></div>`).join('')}<div class="d small muted">No suma al presupuesto de comida.</div></div>`;
 }
+function fitBox(s) {
+  const left = r2(S.budget - spentInfo().spent); if (!(s.total > left + 0.01)) return '';
+  const base = s.total; const opts = [];
+  for (const it of S.plan.filter(p => !p.cocinado)) {
+    const r = byId(it.rid); if (!r) continue;
+    const less = it.veces > 1 ? S.plan.map(p => p === it ? { ...p, veces: p.veces - 1 } : p) : S.plan.filter(p => p !== it);
+    const d1 = base - shop(less).total; if (d1 > 0.05) opts.push({ save: d1, html: `<button type="button" class="btn small ghost" data-act="fit-less" data-k="${it.k}">Un plato menos de ${esc(r.n)} · ahorras ${eur(d1)}</button>` });
+    const meal = r.tipos[0]; let best = null;
+    for (const c of S.R) { if (c.id === r.id || c.tipos[0] !== meal || !c.i.length) continue; const sw = S.plan.map(p => p === it ? { ...p, rid: c.id } : p); const d2 = base - shop(sw).total; if (d2 > 0.3 && (!best || d2 > best.d)) best = { c, d: d2 }; }
+    if (best) opts.push({ save: best.d, html: `<button type="button" class="btn small ghost" data-act="fit-swap" data-k="${it.k}" data-to="${best.c.id}">Cambiar ${esc(r.n)} por ${esc(best.c.n)} · ahorras ${eur(best.d)}</button>` });
+  }
+  opts.sort((a, b) => b.save - a.save);
+  return `<div class="fit"><b>Esta compra (${eur(s.total)}) se pasa de lo que te queda esta semana (${eur(Math.max(0, left))}).</b>${opts.length ? `<p class="small muted" style="margin:0">Para ajustarla puedes:</p>${opts.slice(0, 3).map(o => o.html).join('')}` : '<p class="small muted" style="margin:0">Quita algún plato de tu Semana o marca lo que ya tengas en casa.</p>'}</div>`;
+}
 function renderLista() {
   const s = shop(S.plan); const el = $('#shop-list'); const cb = consBox() + homeBox();
   if (!s.rows.length) { el.innerHTML = cb + '<div class="empty" style="border:0">La lista se llena cuando añades platos a tu semana.</div>'; return; }
-  el.innerHTML = cb + s.rows.map((x, i) => {
+  el.innerHTML = fitBox(s) + cb + s.rows.map((x, i) => {
     const done = x.packs === 0; const inCart = !done && !!(S.cart || {})[x.n]; const miss = x.need - x.have; const sub = done ? null : subText(x.n, miss);
     const basic = !done && !x.cons && x.packs && x.need / (x.packs * x.p.q) < 0.25;
     return `<div class="row ${done || inCart ? 'done' : ''}">
@@ -675,7 +694,8 @@ function toast(msg) {
   }
   while (box.children.length >= 2) box.firstElementChild.remove(); // como mucho 2 avisos a la vez
   const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; box.appendChild(t);
-  const tm = setTimeout(() => t.remove(), 3500); lastToast = { key: m ? m[2] : msg, n: 1, el: t, tm };
+  const ms = Math.max(4500, msg.length * 70) * (S.bigText ? 1.4 : 1); t.addEventListener('click', () => t.remove());
+  const tm = setTimeout(() => t.remove(), ms); lastToast = { key: m ? m[2] : msg, n: 1, el: t, tm };
 }
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
@@ -727,10 +747,16 @@ document.addEventListener('click', ev => {
   }
   else if (a === 'ideas') { IDEAS = null; renderIdeas(); $('#dlg-ideas').showModal(); return; }
   else if (a === 'mine') { if (!S.mine.includes(b.dataset.id)) S.mine.push(b.dataset.id); toast(byId(b.dataset.id).n + ' añadida a tu recetario'); }
-  else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
+  else if (a === 'unmine') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Toca otra vez'; b.classList.add('warn-t'); setTimeout(() => { if (b.isConnected) { b.dataset.confirm = ''; b.textContent = 'Quitar'; b.classList.remove('warn-t'); } }, 4000); return; }
+    S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' se ha guardado en Explorar. Puedes volver a añadirla cuando quieras'); }
   else if (a === 'more') { S['more_' + b.dataset.t] = (S['more_' + b.dataset.t] || 30) + 30; renderRecetas(); return; }
   else if (a === 'snack-add') { const n = $('#sn-prod').value; const q = Number($('#sn-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.snackSel = n; const c = eatSnack(n, q); toast(`Anotado: ${fmtQ(q, S.P[n].u)} de ${n} (${eur(c)})`); }
   else if (a === 'haveit') { const n = b.dataset.n; S.stock[n] = r2(Math.max(S.stock[n] || 0, Number(b.dataset.need) || 0)); toast(`Apuntado: tienes ${n} en casa. Lo quito de la lista`); }
+  else if (a === 'fit-less' || a === 'fit-swap') {
+    const it = S.plan.find(p => String(p.k) === b.dataset.k); if (!it) return;
+    if (a === 'fit-less') { it.veces -= 1; if (it.veces <= 0) S.plan = S.plan.filter(p => p !== it); toast('Un plato menos de ' + byId(it.rid).n); }
+    else { const from = byId(it.rid).n; it.rid = b.dataset.to; if (!S.mine.includes(b.dataset.to)) S.mine.push(b.dataset.to); toast(`Cambiado: ${from} → ${byId(b.dataset.to).n}`); }
+  }
   else if (a === 'cart-stock') {
     const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0; const lineas = [];
     for (const x of rows) {
@@ -770,7 +796,10 @@ document.addEventListener('change', ev => {
   else if (t.dataset.act === 'cart') { S.cart = S.cart || {}; if (t.checked) S.cart[t.dataset.n] = 1; else delete S.cart[t.dataset.n]; }
   else if (t.dataset.act === 'have') { const n = t.dataset.n; if (t.checked) { S.stock[n] = Math.max(S.stock[n] || 0, Number(t.dataset.need)); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } } else delete S.stock[n]; }
   else if (t.dataset.act === 'hstock') { const n = t.dataset.n; const v = Math.max(0, Math.round(Number(t.value) || 0)); if (v > 0) { S.hstock[n] = v; delete S.hwant[n]; } else delete S.hstock[n]; }
-  else if (t.dataset.act === 'stock') { const n = t.dataset.n; const v = Math.max(0, Number(t.value) || 0); if (isC(n) && v > (S.stock[n] || 0)) { S.since[n] = Date.now(); delete S.snz[n]; } if (v > 0) S.stock[n] = v; else delete S.stock[n]; }
+  else if (t.dataset.act === 'stock') { const n = t.dataset.n; const v = Math.max(0, Number(t.value) || 0);
+    const old = S.stock[n] || 0, pk = S.P[n] ? S.P[n].q : 1;
+    if (v > Math.max(old * 4, old + pk * 3) && !(S.stockOk && S.stockOk.n === n && S.stockOk.v === v)) { S.stockOk = { n, v }; t.value = old; toast(`¿De verdad tienes ${fmtQ(v, S.P[n].u)} de ${n}? Parece mucho. Si es correcto, escríbelo otra vez`); return; }
+    S.stockOk = null; if (isC(n) && v > (S.stock[n] || 0)) { S.since[n] = Date.now(); delete S.snz[n]; } if (v > 0) S.stock[n] = v; else delete S.stock[n]; }
   else return;
   render();
 });
@@ -792,9 +821,10 @@ function openSettings() {
       <label class="field">País y moneda<select id="st-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
     </div>
     <div class="grid2">
-      <label class="field">¿Cuánto quieres gastar a la semana en comida? (${SYM()})<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
+      <label class="field">¿Cuánto quieres gastar a la semana en comida? (${SYM()})<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"><span class="small muted">≈ ${eur(S.budget * 30.44 / 7)} al mes</span></label>
       ${PROXY ? `<label class="field">Código de invitación <span class="muted">(opcional)</span><input id="st-code" autocomplete="off" autocapitalize="none" placeholder="Si te pasaron uno" value="${esc(S.code)}"></label>` : ''}
     </div>
+    <label class="toggle"><input type="checkbox" id="st-big" ${S.bigText ? 'checked' : ''}> Letra y botones más grandes</label>
     <label class="field">Estilo de la app<select id="st-theme">${THEMES.map(([v, l]) => `<option value="${v}" ${v === (S.theme || 'grafito') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <h3 style="font-size:16px;margin-top:6px">Avisos</h3>
     <label class="toggle"><input type="checkbox" id="st-enjoy" ${S.enjoyPopup !== false ? 'checked' : ''}> Mensaje de «que aproveche» al anotar lo que comes</label>
@@ -834,7 +864,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value);
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
-    S.enjoyPopup = $('#st-enjoy').checked; S.theme = $('#st-theme').value; applyTheme();
+    S.enjoyPopup = $('#st-enjoy').checked; S.theme = $('#st-theme').value; S.bigText = $('#st-big').checked; applyTheme();
     const wasOn = S.remind.on, oldT = REM.map(([k]) => S.remind[k]).join(); S.remind.on = $('#st-remind').checked; for (const [k] of REM) S.remind[k] = $('#st-r-' + k).value || S.remind[k];
     if (S.remind.on && (!wasOn || oldT !== REM.map(([k]) => S.remind[k]).join())) enableReminders(); else if (!S.remind.on && wasOn) disablePush();
     const reg = $('#st-region').value; if (reg !== S.region) { applyRegion(reg); S.cname = {}; S.lname = {}; syncCommunity(true); buildLoc(); toast(`Precios y nombres de ${REG().name}`); setTimeout(() => localize(document.body), 0); }
@@ -897,7 +927,9 @@ function openScan() {
     <p class="lead">Haz una foto al ticket o elige una de la galería. ${aiReady() ? 'La IA lo leerá y podrás revisarlo antes de guardar.' : `Para leerlo automáticamente añade tu ${PROXY ? 'código de invitación' : 'clave de API'} en Ajustes; mientras, puedes apuntarlo a mano.`}</p>
     <button type="button" class="btn wide" id="sc-cam">Hacer foto</button>
     <button type="button" class="btn ghost wide" id="sc-gal">Elegir de la galería</button>
-    <button type="button" class="link" id="sc-manual" style="justify-self:center">Apuntarlo a mano</button>`;
+    <button type="button" class="link" id="sc-manual" style="justify-self:center">Apuntarlo a mano</button>
+    ${shop(S.plan).rows.some(x => x.packs) ? `<div class="quick"><b>¿Compraste lo de tu Lista?</b><p class="small muted" style="margin:0">Escribe solo lo que pagaste y la app lo pasa todo a tu despensa.</p>
+      <div class="add-row"><input id="sc-total" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Total pagado (${SYM()})" class="sel"><button type="button" class="btn small" id="sc-quick">Apuntar</button></div></div>` : ''}`;
   $('#dlg-scan').showModal();
 }
 async function fileToJpeg(file) {
@@ -1023,6 +1055,15 @@ $('#dlg-scan').addEventListener('click', ev => {
   if (b.dataset.close !== undefined) { RV = null; return $('#dlg-scan').close(); }
   if (b.id === 'sc-cam') $('#file-cam').click();
   else if (b.id === 'sc-gal') $('#file-gal').click();
+  else if (b.id === 'sc-quick') {
+    const tot = Number($('#sc-total').value); if (!(tot > 0)) return toast('Escribe cuánto pagaste');
+    const rows = shop(S.plan).rows.filter(x => x.packs); const est = rows.reduce((a, x) => a + x.packs * x.p.p, 0) || 1; const k = tot / est; const lineas = [];
+    for (const x of rows) { const inv = r2(x.packs * x.p.q); S.stock[x.n] = r2((S.stock[x.n] || 0) + inv); if (isC(x.n)) { S.since[x.n] = Date.now(); delete S.want[x.n]; delete S.snz[x.n]; } if (S.cart) delete S.cart[x.n];
+      lineas.push({ desc: x.n, producto: x.n, inv, uds: x.packs, importe: r2(x.packs * x.p.p * k), tipo: 'De la lista', grupo: null }); }
+    const d = new Date(); const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Compra (solo total)', est: true, total: r2(tot), lineas });
+    $('#dlg-scan').close(); render(); toast(`Apuntado: ${eur(tot)}. Lo de tu lista ya está en la despensa`);
+  }
   else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); }
   else if (b.dataset.rvdel !== undefined) { RV.lineas.splice(Number(b.dataset.rvdel), 1); renderReview(); }
   else if (b.id === 'rv-add') { RV.lineas.push({ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }); renderReview(); }
@@ -1282,7 +1323,7 @@ async function syncCommunity(force) {
 const THEME_FONTS = { confianza: 'family=Plus+Jakarta+Sans:wght@400;500;600;700;800', fresco: 'family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700' };
 const THEME_BG = { grafito: '#121315', confianza: '#F4F6FA', fresco: '#F3F6F2' };
 function applyTheme() {
-  const t = THEME_BG[S.theme] ? S.theme : 'grafito'; document.documentElement.dataset.theme = t;
+  const t = THEME_BG[S.theme] ? S.theme : 'grafito'; document.documentElement.dataset.theme = t; document.documentElement.classList.toggle('big', !!S.bigText);
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', THEME_BG[t]);
   if (THEME_FONTS[t] && !document.getElementById('font-' + t)) { const l = document.createElement('link'); l.id = 'font-' + t; l.rel = 'stylesheet'; l.href = `https://fonts.googleapis.com/css2?${THEME_FONTS[t]}&display=swap`; document.head.appendChild(l); }
 }
@@ -1399,6 +1440,8 @@ function openWelcome() {
     <div class="sheet-head"><h2>Bienvenido a Tandas</h2></div>
     <p class="lead" style="margin:0">Planifica tus comidas por tandas, controla lo que tienes en casa y cuánto te cuesta cada plato. Es una versión de prueba: tus datos se guardan solo en este móvil.</p>
     <label class="field">¿Cómo te llamas?<input id="wl-name" autocomplete="given-name" maxlength="30"></label>
+    <div class="grid2"><label class="field">¿Cuánto puedes gastar en comida?<input id="wl-budget" type="number" min="0" inputmode="decimal" placeholder="Ej.: 100"></label><label class="field">Cada<select id="wl-per"><option value="m">mes</option><option value="s">semana</option></select></label></div>
+    <label class="toggle"><input type="checkbox" id="wl-big"> Letra y botones más grandes</label>
     <label class="field">¿Dónde haces la compra?<select id="wl-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
     <label class="toggle"><input type="checkbox" id="wl-remind" checked> Avísame si se me olvida comer (9:00, 14:00 y 22:00)</label>
     ${PROXY ? '<details class="adv"><summary>¿Te pasaron un código? (opcional)</summary><label class="field">Código de invitación<input id="wl-code" autocomplete="off" autocapitalize="none" placeholder="Solo si te lo dieron con el enlace"></label><p class="small muted" style="margin:0">Sirve para que el asistente y la lectura de tickets funcionen sin pagar nada.</p></details>' : ''}
@@ -1411,6 +1454,8 @@ $('#dlg-welcome').addEventListener('click', ev => {
   if (b.id === 'wl-go') {
     const n = $('#wl-name').value.trim(); if (!n) return toast('Escribe tu nombre');
     if ($('#wl-remind') && $('#wl-remind').checked) { S.remind.on = true; enableReminders(); }
+    const bud = Number($('#wl-budget').value); if (bud > 0) S.budget = r2($('#wl-per').value === 'm' ? bud * 7 / 30.44 : bud);
+    S.bigText = $('#wl-big').checked; applyTheme();
     S.name = n; if ($('#wl-region').value !== S.region) applyRegion($('#wl-region').value); if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
   } else if (b.id === 'wl-import') { const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
 });
