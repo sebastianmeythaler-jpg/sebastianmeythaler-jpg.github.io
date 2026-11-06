@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.2 · 6 nov';
+const VERSION = '2.3 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -294,8 +294,8 @@ function renderHeader() {
     <div class="seg" role="img" aria-label="Lo planificado ${eur(si.planned)}, extras ${eur(si.extras)}, falta comprar ${eur(pend)}">
       ${si.planned > 0 ? `<i style="width:${si.planned / scale * 100}%;background:var(--accent)"></i>` : ''}${si.extras > 0 ? `<i style="width:${si.extras / scale * 100}%;background:var(--warn)"></i>` : ''}${pend > 0 ? `<i style="width:${pend / scale * 100}%;background:var(--mid)"></i>` : ''}
     </div>
-    <div class="seg-legend"><span><i style="background:var(--accent)"></i>Planificado ${eur(si.planned)}</span><span><i style="background:var(--warn)"></i>Extras ${eur(si.extras)}</span>${pend > 0 ? `<span><i style="background:var(--mid)"></i>Por comprar ${eur(pend)}</span>` : ''}</div>
-    <div class="sum-row small"><span><b>${got}/${tot}</b> comidas cubiertas con lo que tienes</span><span class="muted">${got < tot ? 'ver detalle' : 'semana cubierta'}</span></div>`;
+    <div class="seg-legend"><span><i style="background:var(--accent)"></i>Compras de tu lista ${eur(si.planned)}</span><span><i style="background:var(--warn)"></i>Caprichos y extras ${eur(si.extras)}</span>${pend > 0 ? `<span><i style="background:var(--mid)"></i>Te falta comprar ${eur(pend)}</span>` : ''}</div>
+    <div class="sum-row small"><span>Con lo que hay en casa tienes para <b>${got} de ${tot}</b> comidas de la semana</span><span class="muted">${got < tot ? 'ver más' : '¡semana cubierta!'}</span></div>`;
   const det = $('#details'); det.hidden = !S.detailsOpen; if (S.detailsOpen) det.innerHTML = renderDetails(si, pend);
 }
 function renderDetails(si, pend) {
@@ -333,7 +333,7 @@ function haveLine(r, it) {
   if (max >= want) return `<div class="have ok">✓ Tienes en casa para ${max} ${pl(max)}${it ? ` · llevas ${it.veces}` : ''}</div>`;
   const miss = coverage(r, want, opc, k).filter(x => !x.ok && !x.o && !x.c);
   const head = it ? `Con lo de casa llegas a ${max} de ${want}. ` : '';
-  return `<div class="have miss"><span>${head}${miss.map(x => { const sub = subText(x.n, x.miss); return sub ? `En vez de ${esc(x.n)}, ${sub}` : `Te falta ${esc(x.n)} ${fmtQ(x.miss, S.P[x.n].u)}`; }).join('; ')}</span></div>`;
+  return `<details class="have miss misslist"><summary>${head}Te ${miss.length === 1 ? 'falta 1 cosa' : `faltan ${miss.length} cosas`} · ver cuáles</summary><ul>${miss.map(x => { const sub = subText(x.n, x.miss); return `<li>${sub ? `En vez de ${esc(x.n)}, ${sub}` : `${esc(x.n)}: ${fmtQ(x.miss, S.P[x.n].u)}`}</li>`; }).join('')}</ul><p class="small" style="margin:4px 0 0">Si la añades a tu semana, irán solas a la Lista de la compra.</p></details>`;
 }
 function howTo(r, key, veces, k) {
   const open = S.openHow.includes(key); const e = eq(); const mult = veces * e / r.rac; const raciones = veces * e;
@@ -358,7 +358,7 @@ function recipeCard(r, explore) {
   else ctrl = `<span class="stepper" role="group" aria-label="Platos de ${esc(r.n)}"><button type="button" ${it ? `data-act="veces" data-k="${it.k}" data-d="-1"` : 'disabled'} aria-label="Un plato menos">−</button><b>${it ? it.veces : 0}</b><button type="button" class="plus" ${it ? `data-act="veces" data-k="${it.k}" data-d="1"` : `data-act="addone" data-id="${r.id}"`} aria-label="Un plato más">+</button></span>`;
   return `<article class="card">
     <div class="card-head"><h3>${esc(r.n)}</h3>${explore ? '' : `<button type="button" class="link" data-act="unmine" data-id="${r.id}">Quitar</button>`}</div>
-    <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc">Apta para tanda</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
+    <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc" title="Se cocina una vez y se come varios días">Para varios días</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
     <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración${kcalTxt(r, false)}</small></div>${ctrl}</div>
     ${it && !explore ? `<div class="small muted">En tu semana: ${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ≈ ${eur(perRacion(r, it.opc) * it.veces * eq())}</div>` : ''}
     ${haveLine(r, explore ? null : it)}
@@ -468,11 +468,14 @@ function renderLista() {
   if (!s.rows.length) { el.innerHTML = cb + '<div class="empty" style="border:0">La lista se llena cuando añades platos a tu semana.</div>'; return; }
   el.innerHTML = cb + s.rows.map((x, i) => {
     const done = x.packs === 0; const inCart = !done && !!(S.cart || {})[x.n]; const miss = x.need - x.have; const sub = done ? null : subText(x.n, miss);
+    const basic = !done && !x.cons && x.packs && x.need / (x.packs * x.p.q) < 0.25;
     return `<div class="row ${done || inCart ? 'done' : ''}">
       <input type="checkbox" id="sl-${i}" data-act="cart" data-n="${esc(x.n)}" ${done || inCart ? 'checked' : ''} ${done ? 'disabled' : ''} aria-label="${done ? 'Ya lo tienes' : 'En el carro'}: ${esc(x.n)}">
       <label for="sl-${i}"><div class="n">${esc(x.n)}</div><div class="d">${x.cons ? (x.packs ? `${S.want[x.n] ? 'Se te acabó' : 'Lo usa tu semana y no tienes'} · compra 1 × ${esc(x.p.f)}` : `Especia · tienes ${x.have} ${x.have === 1 ? 'bote' : 'botes'}, no hace falta comprar`) : `Necesitas ${fmtQ(x.need, x.p.u)}${x.have ? ` · en casa ${fmtQ(x.have, x.p.u)}` : ''}${x.packs ? ` · compra ${x.packs} × ${esc(x.p.f)}` : ' · no hace falta comprar'}`}</div>${sub ? `<div class="d" style="color:var(--ok)">Para ahorrar: ${sub}</div>` : ''}</label>
+      ${basic ? `<div class="basic"><span>Básico: esta semana solo usas una parte; el resto te dura para otras.</span><button type="button" class="btn small ghost" data-act="haveit" data-n="${esc(x.n)}" data-need="${x.need}">Ya lo tengo en casa</button></div>` : ''}
       <div class="p num">${x.p.t ? '' : '≈ '}${eur(x.cost)}</div></div>`;
   }).join('') + `<div class="foot"><span>Total a pagar</span><span class="num">≈ ${eur(s.total)}</span></div>` +
+  (s.total > 0 && s.consumo < s.total - 0.5 ? `<p class="small muted" style="margin:0;padding:0 12px 10px">De eso, esta semana solo te comes ≈ ${eur(s.consumo)}. El resto (${eur(s.total - s.consumo)}) se queda en tu despensa para las próximas semanas.</p>` : '') +
   (s.rows.some(x => x.packs && (S.cart || {})[x.n]) ? `<div class="cart-note"><p class="small muted" style="margin:0">Marcar solo lo pone en el carro. La despensa y el gasto se actualizan al escanear el ticket (o con el botón de abajo, con precio estimado).</p><button type="button" class="btn small ghost" data-act="cart-stock">No tengo ticket: pasar lo marcado a la despensa</button></div>` : '');
 }
 function renderHogar() {
@@ -556,12 +559,24 @@ function applyNivel() {
     : n === 1 ? 'Paso 2 · En «Mi recetario» pulsa el botón + de un plato para llevarlo a tu Semana. Con eso se abre el siguiente paso.'
     : n === 2 && !S.tickets.length ? 'Paso 3 · En Lista ves qué te falta comprar. Al comprar, escanea el ticket (botón naranja) para apuntar el gasto y llenar la despensa.'
     : n === 3 ? 'Paso 4 · Cuando cocines o te comas un plato, márcalo en Semana: la despensa se descuenta sola.' : '';
-  $('#guia').textContent = g; $('#guia').hidden = !g;
+  const go = n === 1 && !S.mine.length ? 'explore' : n === 1 ? 'mine' : n === 2 && !S.tickets.length ? 'lista' : n === 3 ? 'semana' : '';
+  const here = go === 'explore' ? S.view === 'recetas' && S.seg === 'explore' : go === 'mine' ? S.view === 'recetas' && S.seg === 'mine' : S.view === go;
+  $('#guia').innerHTML = g ? `<span>${esc(g)}</span>${go && !here ? `<button type="button" class="btn small" data-go="${go}">Llévame</button>` : ''}` : ''; $('#guia').hidden = !g;
 }
 function render() { applyNivel(); renderHeader(); renderRecetas(); renderSemana(); renderLista(); renderDespensa(); setView(S.view); save(); }
 
 /* ---------- Acciones ---------- */
-function toast(msg) { let box = document.getElementById('toasts'); if (!box) { box = document.createElement('div'); box.id = 'toasts'; box.className = 'toasts'; document.body.appendChild(box); } const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; box.appendChild(t); setTimeout(() => t.remove(), 3500); }
+let lastToast = null;
+function toast(msg) {
+  let box = document.getElementById('toasts'); if (!box) { box = document.createElement('div'); box.id = 'toasts'; box.className = 'toasts'; document.body.appendChild(box); }
+  const m = /^(.+?) (añadid[ao]s? a tu recetario)$/.exec(msg);
+  if (m && lastToast && lastToast.key === m[2] && document.body.contains(lastToast.el)) { // varias seguidas: un solo aviso con el número
+    lastToast.n++; lastToast.el.textContent = `${lastToast.n} recetas añadidas a tu recetario`; clearTimeout(lastToast.tm); lastToast.tm = setTimeout(() => lastToast.el.remove(), 3500); return;
+  }
+  while (box.children.length >= 2) box.firstElementChild.remove(); // como mucho 2 avisos a la vez
+  const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg; box.appendChild(t);
+  const tm = setTimeout(() => t.remove(), 3500); lastToast = { key: m ? m[2] : msg, n: 1, el: t, tm };
+}
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
   const wasCooked = !!it.cocinado;
@@ -615,6 +630,7 @@ document.addEventListener('click', ev => {
   else if (a === 'unmine') { S.mine = S.mine.filter(x => x !== b.dataset.id); toast(byId(b.dataset.id).n + ' movida a Explorar'); }
   else if (a === 'more') { S['more_' + b.dataset.t] = (S['more_' + b.dataset.t] || 30) + 30; renderRecetas(); return; }
   else if (a === 'snack-add') { const n = $('#sn-prod').value; const q = Number($('#sn-qty').value) || 0; if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.snackSel = n; const c = eatSnack(n, q); toast(`Anotado: ${fmtQ(q, S.P[n].u)} de ${n} (${eur(c)})`); }
+  else if (a === 'haveit') { const n = b.dataset.n; S.stock[n] = r2(Math.max(S.stock[n] || 0, Number(b.dataset.need) || 0)); toast(`Apuntado: tienes ${n} en casa. Lo quito de la lista`); }
   else if (a === 'cart-stock') {
     const rows = shop(S.plan).rows.filter(x => x.packs && (S.cart || {})[x.n]); let n = 0; const lineas = [];
     for (const x of rows) {
@@ -675,13 +691,9 @@ function openSettings() {
       <label class="field">País y moneda<select id="st-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
     </div>
     <div class="grid2">
-      <label class="field">Presupuesto semanal (${SYM()})<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
-      <label class="field">La semana empieza el<select id="st-week">${DAYS.map((d, i) => `<option value="${i}" ${i === S.weekStart ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
-      <label class="field">Adultos<input id="st-adults" type="number" min="1" max="8" value="${S.adults}"></label>
-      <label class="field">Niños (½ ración)<input id="st-kids" type="number" min="0" max="8" value="${S.kids}"></label>
+      <label class="field">¿Cuánto quieres gastar a la semana en comida? (${SYM()})<input id="st-budget" type="number" min="0" inputmode="decimal" value="${S.budget}"></label>
+      ${PROXY ? `<label class="field">Código de invitación <span class="muted">(opcional)</span><input id="st-code" autocomplete="off" autocapitalize="none" placeholder="Si te pasaron uno" value="${esc(S.code)}"></label>` : ''}
     </div>
-    <p class="small muted" style="margin:0">Comidas a cubrir por semana</p>
-    <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${MEALS.map(([k, l]) => `<label class="field">${l}<input id="st-t-${k}" type="number" min="0" max="21" value="${S.target[k]}"></label>`).join('')}</div>
     <label class="field">Estilo de la app<select id="st-theme">${THEMES.map(([v, l]) => `<option value="${v}" ${v === (S.theme || 'grafito') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <h3 style="font-size:16px;margin-top:6px">Avisos</h3>
     <label class="toggle"><input type="checkbox" id="st-enjoy" ${S.enjoyPopup !== false ? 'checked' : ''}> Mensaje de «que aproveche» al anotar lo que comes</label>
@@ -689,11 +701,19 @@ function openSettings() {
     <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${REM.map(([k, , l]) => `<label class="field">${l}<input id="st-r-${k}" type="time" value="${S.remind[k]}"></label>`).join('')}</div>
     <p class="small muted" style="margin:0">Te avisa a esas horas solo si aún no has pulsado «Comí» en esa comida. ${S.pushId ? 'Los avisos llegan aunque la app esté cerrada.' : PROXY ? 'Para que lleguen con la app cerrada, pon tu código de invitación. En iPhone, la app tiene que estar añadida a la pantalla de inicio.' : 'Con la app cerrada, el móvil decide cuándo la deja comprobar, así que algún aviso puede llegar con retraso.'}</p>
     ${S.pushId ? '<button type="button" class="btn ghost small" id="st-test-push" style="justify-self:start">Enviarme un aviso de prueba</button>' : ''}
-    <h3 style="font-size:16px;margin-top:6px">Inteligencia artificial</h3>
-    ${PROXY ? `<label class="field">Código de invitación<input id="st-code" autocomplete="off" autocapitalize="none" placeholder="El que te pasaron con el enlace" value="${esc(S.code)}"></label>` : ''}
+
+    <details class="adv"><summary>Ajustes avanzados</summary>
+    <div class="grid2">
+      <label class="field">La semana empieza el<select id="st-week">${DAYS.map((d, i) => `<option value="${i}" ${i === S.weekStart ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+      <label class="field">Adultos<input id="st-adults" type="number" min="1" max="8" value="${S.adults}"></label>
+      <label class="field">Niños (½ ración)<input id="st-kids" type="number" min="0" max="8" value="${S.kids}"></label>
+    </div>
+    <p class="small muted" style="margin:0">Comidas que quieres tener cubiertas cada semana</p>
+    <div class="grid2" style="grid-template-columns:repeat(3,minmax(0,1fr))">${MEALS.map(([k, l]) => `<label class="field">${l}<input id="st-t-${k}" type="number" min="0" max="21" value="${S.target[k]}"></label>`).join('')}</div>
     <label class="field">${PROXY ? 'Clave de API propia (opcional)' : 'Clave de API de Anthropic'}<input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(S.apiKey)}"></label>
     <label class="field">Modelo<select id="st-model">${MODELS.map(([v, l]) => `<option value="${v}" ${v === S.model ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <p class="small muted" style="margin:0">${PROXY ? 'Con el código de invitación no necesitas nada más. Si pones una clave propia, se usa esa y se guarda solo en este móvil.' : 'La clave se guarda solo en este móvil. Pon un límite de gasto mensual en console.anthropic.com.'}</p>
+    </details>
     <h3 style="font-size:16px;margin-top:6px">Tus datos</h3>
     <div class="grid2">
       <button type="button" class="btn ghost" id="st-export">Exportar copia</button>
@@ -842,7 +862,12 @@ function renderReview() {
     <div class="grid2"><label class="field">Tienda<input data-rv="tienda" value="${esc(RV.tienda)}"></label><label class="field">Fecha<input type="date" data-rv="fecha" value="${esc(RV.fecha)}"></label></div>
     <label class="field">Total pagado (${SYM()})<input type="number" step="0.01" inputmode="decimal" data-rv="total" value="${RV.total}"></label>
     <div class="check ${Math.abs(diff) < 0.02 ? 'ok' : 'bad'}">${Math.abs(diff) < 0.02 ? `✓ Las líneas suman ${eur(sum)}, cuadra con el total` : `Las líneas suman ${eur(sum)}; diferencia de ${eur(diff)} con el total`}</div>
-    ${RV.lineas.map((l, i) => { const p = S.P[l.producto]; return `<div class="rv">
+    ${(() => { const ok = l => l.open ? false : l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && S.P[l.producto] && Number(l.importe) > 0 && Number(l.inv) > 0); const bad = RV.lineas.filter(l => !ok(l)).length;
+      return `<p class="small" style="margin:0">${bad ? `Hay <b>${bad}</b> ${bad === 1 ? 'línea' : 'líneas'} que conviene revisar (en naranja). Lo demás está bien: puedes guardar directamente.` : 'Todo parece correcto. Si algo no cuadra, toca «Cambiar».'}</p>`; })()}
+    ${RV.lineas.map((l, i) => { const p = S.P[l.producto];
+      const isOk = !l.open && (l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && S.P[l.producto] && Number(l.importe) > 0 && Number(l.inv) > 0));
+      if (isOk) return `<div class="rv-mini"><span class="ok">✓</span><span class="t"><b>${esc(l.tipo === 'Hogar' ? (l.hprod || l.desc) : l.tipo === 'Extra' ? l.desc : l.producto)}</b><small>${l.tipo === 'Hogar' ? 'Para casa' : l.tipo === 'Extra' ? 'Extra · ' + esc(l.grupo || '') : 'A la despensa: ' + fmtQ(Number(l.inv), p.u)}</small></span><span class="num">${eur(Number(l.importe) || 0)}</span><button type="button" class="link" data-rvopen="${i}">Cambiar</button></div>`;
+      return `<div class="rv rv-attn">${!l.producto && l.tipo === 'De la lista' ? '<p class="small" style="margin:0 0 6px;color:var(--mid)">¿Qué producto es? Elígelo, o cambia el tipo a «Extra» si fue un capricho.</p>' : ''}
       <div class="rv-top"><input data-i="${i}" data-f="desc" value="${esc(l.desc)}" aria-label="Descripción"><button type="button" class="icon-btn" data-rvdel="${i}" aria-label="Quitar línea" style="width:36px;height:36px">✕</button></div>
       <div class="rv-grid">
         ${l.tipo === 'Hogar' ? `<label>Producto de casa<input data-i="${i}" data-f="hprod" list="h-names-rv" value="${esc(l.hprod || l.desc)}"></label>` : `<label>Producto<select data-i="${i}" data-f="producto">${prodOptions(l.producto)}</select></label>`}
@@ -900,6 +925,7 @@ $('#dlg-scan').addEventListener('click', ev => {
   else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }] }; renderReview(); }
   else if (b.dataset.rvdel !== undefined) { RV.lineas.splice(Number(b.dataset.rvdel), 1); renderReview(); }
   else if (b.id === 'rv-add') { RV.lineas.push({ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros' }); renderReview(); }
+  else if (b.dataset.rvopen !== undefined) { RV.lineas[Number(b.dataset.rvopen)].open = true; renderReview(); }
   else if (b.id === 'rv-save') saveReview();
 });
 $('#dlg-scan').addEventListener('change', ev => {
@@ -1273,7 +1299,8 @@ function openWelcome() {
     <p class="lead" style="margin:0">Planifica tus comidas por tandas, controla lo que tienes en casa y cuánto te cuesta cada plato. Es una versión de prueba: tus datos se guardan solo en este móvil.</p>
     <label class="field">¿Cómo te llamas?<input id="wl-name" autocomplete="given-name" maxlength="30"></label>
     <label class="field">¿Dónde haces la compra?<select id="wl-region">${Object.entries(window.REGIONS).map(([k, r]) => `<option value="${k}" ${k === S.region ? 'selected' : ''}>${r.name} (${r.currency === 'USD' ? '$' : '€'})</option>`).join('')}</select></label>
-    ${PROXY ? '<label class="field">Código de invitación<input id="wl-code" autocomplete="off" autocapitalize="none" placeholder="Te lo pasaron con el enlace"></label>' : ''}
+    <label class="toggle"><input type="checkbox" id="wl-remind" checked> Avísame si se me olvida comer (9:00, 14:00 y 22:00)</label>
+    ${PROXY ? '<details class="adv"><summary>¿Te pasaron un código? (opcional)</summary><label class="field">Código de invitación<input id="wl-code" autocomplete="off" autocapitalize="none" placeholder="Solo si te lo dieron con el enlace"></label><p class="small muted" style="margin:0">Sirve para que el asistente y la lectura de tickets funcionen sin pagar nada.</p></details>' : ''}
     <button type="button" class="btn wide" id="wl-go">Empezar</button>
     <button type="button" class="link" id="wl-import" style="justify-self:center">Tengo una copia de mis datos</button>`;
   $('#dlg-welcome').showModal();
@@ -1282,6 +1309,7 @@ $('#dlg-welcome').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
   if (b.id === 'wl-go') {
     const n = $('#wl-name').value.trim(); if (!n) return toast('Escribe tu nombre');
+    if ($('#wl-remind') && $('#wl-remind').checked) { S.remind.on = true; enableReminders(); }
     S.name = n; if ($('#wl-region').value !== S.region) applyRegion($('#wl-region').value); if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
   } else if (b.id === 'wl-import') { const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
 });
@@ -1305,3 +1333,6 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 let rsT = null;
 $('#rsearch').addEventListener('input', ev => { clearTimeout(rsT); rsT = setTimeout(() => { S.rq = ev.target.value; renderRecetas(); }, 200); });
+
+$('#guia').addEventListener('click', ev => { const b = ev.target.closest('[data-go]'); if (!b) return; const g = b.dataset.go;
+  if (g === 'explore' || g === 'mine') { S.seg = g; setView('recetas'); } else setView(g); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });

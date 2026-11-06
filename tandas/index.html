@@ -44,7 +44,7 @@
       </div>
       <input type="search" class="sel rsearch" id="rsearch" placeholder="Buscar receta o ingrediente…" aria-label="Buscar recetas" style="margin-top:12px;width:100%">
       <div class="chips" id="filters" style="margin-top:10px"></div>
-      <label class="toggle" for="only-tanda" style="margin-top:8px"><input type="checkbox" id="only-tanda"> Solo aptas para tanda</label>
+      <label class="toggle" for="only-tanda" style="margin-top:8px"><input type="checkbox" id="only-tanda"> Solo platos para varios días (cocinas una vez)</label>
       <div class="list" id="recipe-list" style="margin-top:12px"></div>
     </section>
 
@@ -52,8 +52,8 @@
       <p class="lead">Ajusta los platos de la semana. Marca «Ya lo cociné» cuando prepares una tanda y «Comí» cuando te comas una o varias raciones.</p>
       <div class="stats" style="margin-top:12px">
         <button type="button" class="stat stat-btn" id="btn-eaten" aria-expanded="false" aria-controls="eaten-panel"><span>Lo que comes <i aria-hidden="true">▾</i></span><b id="s-consumo"></b></button>
-        <div class="stat"><span>Por comprar</span><b id="s-compra"></b></div>
-        <div class="stat"><span>Sobra</span><b id="s-sobra"></b></div>
+        <div class="stat"><span>Te falta comprar</span><b id="s-compra"></b></div>
+        <div class="stat"><span>Te quedará en casa</span><b id="s-sobra"></b></div>
       </div>
       <div class="box eaten-panel" id="eaten-panel" hidden style="margin-top:8px"></div>
       <section class="card" id="snack-box" aria-label="Snacks y picoteo" style="margin-top:12px"></section>
@@ -80,7 +80,7 @@
   <div class="wrap">
     <button type="button" class="tab" data-view="recetas" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"></path><path d="M9 9h6M9 13h4"></path></svg>Recetas</button>
     <button type="button" class="tab" data-view="semana"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg>Semana</button>
-    <button type="button" class="fab" id="btn-scan" aria-label="Escanear ticket"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"></path><path d="M8 10h8M8 14h5"></path></svg></button>
+    <button type="button" class="fab" id="btn-scan" aria-label="Escanear ticket de la compra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"></path><path d="M8 10h8M8 14h5"></path></svg><span class="fab-l">Ticket</span></button>
     <button type="button" class="tab" data-view="lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14l-1.5 11h-11z"></path><path d="M9 7a3 3 0 0 1 6 0"></path></svg>Lista</button>
     <button type="button" class="tab" data-view="despensa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 10h16M10 10v10"></path></svg>Despensa</button>
   </div>

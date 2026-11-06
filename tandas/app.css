@@ -261,3 +261,22 @@ details.rgroup .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;colo
 details.rgroup>article{margin-bottom:10px}
 .guia{margin:12px 0 0;padding:10px 12px;border:1px solid var(--accent);border-radius:12px;font-size:13px;line-height:1.4;color:var(--ink)}
 [hidden]{display:none!important}
+
+/* ---------- Modo principiante: más claro ---------- */
+.fab{flex-direction:column;gap:0}
+.fab .fab-l{font-size:10px;font-weight:800;color:var(--accent-ink);line-height:1;margin-top:1px}
+.fab svg{width:22px;height:22px}
+.guia{display:flex;gap:10px;align-items:center;justify-content:space-between}
+.guia .btn{flex:none}
+details.misslist>summary{cursor:pointer;list-style:none;font-weight:600}
+details.misslist>summary::-webkit-details-marker{display:none}
+details.misslist ul{margin:6px 0 0;padding-left:18px;display:grid;gap:2px}
+.row .basic{grid-column:1/-1;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:12px;color:var(--muted);background:var(--card2);border-radius:10px;padding:6px 8px;margin-top:4px}
+.rv-mini{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.rv-mini .ok{color:var(--ok);font-weight:800}
+.rv-mini .t{display:grid;min-width:0}.rv-mini .t b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rv-mini small{color:var(--muted);font-size:12px}
+.rv-attn{border-color:var(--mid)!important}
+details.adv{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+details.adv>summary{cursor:pointer;font-weight:600;color:var(--muted)}
+details.adv[open]{display:grid;gap:10px}
