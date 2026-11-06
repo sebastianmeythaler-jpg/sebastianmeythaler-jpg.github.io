@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.4 · 6 nov';
+const VERSION = '2.5 · 6 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -354,13 +354,43 @@ function haveLine(r, it) {
   const head = it ? `Con lo de casa llegas a ${max} de ${want}. ` : '';
   return `<details class="have miss misslist"><summary>${head}Te ${miss.length === 1 ? 'falta 1 cosa' : `faltan ${miss.length} cosas`} · ver cuáles</summary><ul>${miss.map(x => { const sub = subText(x.n, x.miss); return `<li>${sub ? `En vez de ${esc(x.n)}, ${sub}` : `${esc(x.n)}: ${fmtQ(x.miss, S.P[x.n].u)}`}</li>`; }).join('')}</ul><p class="small" style="margin:4px 0 0">Si la añades a tu semana, irán solas a la Lista de la compra.</p></details>`;
 }
+/* Medidas de cocina: tazas (240 ml), cucharadas y cucharaditas, para no tener que pesar */
+const DENS = { 'Harina de trigo': 125, 'Azúcar': 200, 'Copos de avena': 90, 'Quinoa': 170, 'Arroz': 190, 'Lentejas': 190, 'Cuscús': 180, 'Coco rallado': 80, 'Cacao en polvo': 85, 'Pan rallado': 110, 'Maicena': 130, 'Queso rallado': 100, 'Mantequilla': 225, 'Miel': 340, 'Leche condensada': 300, 'Crema de cacao y avellana': 300, 'Crema de cacahuete': 260, 'Mayonesa': 230, 'Tomate frito': 250, 'Kétchup': 270, 'Salsa barbacoa': 270, 'Salsa sweet chili': 300, 'Salsa allioli': 230, 'Mostaza': 250, 'Azúcar avainillado': 200, 'Bicarbonato': 220, 'Levadura seca': 150, 'Almendra molida': 100, 'Frutas congeladas': 140, 'Galletas María': 100, 'Guisantes': 145, 'Maíz dulce': 165, 'Tomate triturado': 245, 'Pesto': 240, 'Requesón': 245, 'Queso crema': 230, 'Mermelada': 320, 'Nueces': 100, 'Cacahuetes': 145 };
+function frac(x) { const w = Math.floor(x + 1e-9); const f = Math.round((x - w) * 4) / 4; const F = { 0: '', 0.25: '¼', 0.5: '½', 0.75: '¾', 1: '' }[f]; const W = f === 1 ? w + 1 : w; return (W ? W + (F ? ' ' : '') : '') + (F || (W ? '' : '¼')); }
+function kitchen(n, q, u) {
+  const p = S.P[n]; if (!p || !(q > 0)) return '';
+  if (n === 'Impulsor') return q === 1 ? '1 sobre (≈ 4 cdta)' : `${frac(q)} sobres`;
+  let ml = null;
+  if (u === 'ml') ml = q; else if (p.c) ml = q / 2.5 * 5; else if (u === 'g' && DENS[n]) ml = q / DENS[n] * 240;
+  if (ml == null) return '';
+  const tz = ml / 240; if (tz >= 0.24 && !p.c) return frac(tz) + ' tz';
+  const cda = ml / 15; if (cda >= 0.75) return frac(cda) + ' cda';
+  const cdta = ml / 5; return cdta < 0.2 ? 'una pizca' : frac(cdta) + ' cdta';
+}
 function howTo(r, key, veces, k) {
-  const open = S.openHow.includes(key); const e = eq(); const mult = veces * e / r.rac; const raciones = veces * e;
-  const cov = coverage(r, veces, true, k);
+  const open = S.openHow.includes(key); const e = eq(); const whole = !!r.tanda && r.rac > 1; // lo que se hornea o cocina de una vez: receta completa
+  const mult = whole ? Math.max(1, Math.ceil(veces * e / r.rac)) : veces * e / r.rac; const raciones = whole ? mult * r.rac : veces * e;
+  const cov = coverage(r, whole ? mult * r.rac / e : veces, true, k);
   return `<details class="how" data-how="${key}" ${open ? 'open' : ''}><summary>Ingredientes y pasos</summary><div class="how-body">
-    ${r.i.length ? `<h4>Ingredientes · ${raciones.toLocaleString('es-ES')} ${raciones === 1 ? 'ración' : 'raciones'}</h4>
-    <ul>${r.i.map(([n, q, o]) => { const c = cov.find(x => x.n === n); const st = c ? (c.ok ? '<span class="st ok">en casa</span>' : `<span class="st miss">${c.c ? 'falta 1 bote' : 'falta ' + fmtQ(c.miss, S.P[n].u)}</span>`) : ''; return `<li><span>${esc(n)}${o ? ' <span class="muted">(opcional)</span>' : ''} ${st}</span><span class="num">${fmtQ(q * mult, rU(n))}</span></li>`; }).join('')}</ul>` : ''}
+    ${r.i.length ? `<h4>Ingredientes · ${whole ? 'receta completa, ' : ''}${raciones.toLocaleString('es-ES')} ${raciones === 1 ? 'ración' : 'raciones'}</h4>
+    <ul>${r.i.map(([n, q, o]) => { const c = cov.find(x => x.n === n); const st = c ? (c.ok ? '<span class="st ok">en casa</span>' : `<span class="st miss">${c.c ? 'falta 1 bote' : 'falta ' + fmtQ(c.miss, S.P[n].u)}</span>`) : ''; return `<li><span>${esc(n)}${o ? ' <span class="muted">(opcional)</span>' : ''} ${st}</span><span class="num">${fmtQ(q * mult, rU(n))}${(m => m ? `<small class="km">${m}</small>` : '')(kitchen(n, q * mult, rU(n)))}</span></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">tz = taza (240 ml) · cda = cucharada sopera · cdta = cucharadita de café</p>` : ''}
     <h4>Pasos</h4><ol>${(S.STEPS[r.id] || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div></details>`;
+}
+/* Dibujo del plato (como en la carta de un restaurante): emojis según el plato y sus ingredientes */
+const ART = [[/pizza/i, '🍕'], [/hamburgues/i, '🍔'], [/taco|faja|fajita|burrito|quesadilla|wrap|fajipizza/i, '🌯'], [/s[aá]ndwich|mixto/i, '🥪'], [/sopa|crema de (?!cacao|cacahuete)|potaje|chile|lentejas|garbanzos/i, '🍲'],
+  [/espagueti|macarr|pasta|carbonara|tallar|ñoqui/i, '🍝'], [/arroz con leche/i, '🍮'], [/arroz|chaulaf|quinoa|bowl/i, '🍚'], [/tortilla de patatas|tortilla francesa|revuelto|huevo|cocotte/i, '🍳'],
+  [/patata|bravas/i, '🥔'], [/merluza|at[uú]n|pescado|salm[oó]n/i, '🐟'], [/pollo|muslo|alitas|palomitas/i, '🍗'], [/salchicha/i, '🌭'], [/aguacate/i, '🥑'],
+  [/banano|pl[aá]tano/i, '🍌'], [/zanahoria/i, '🥕'], [/manzana|crumble/i, '🍎'], [/fresa/i, '🍓'], [/coco/i, '🥥'], [/brownie|chocolate|cacao/i, '🍫'], [/galleta|cookie|palmerit/i, '🍪'],
+  [/flan|natilla/i, '🍮'], [/helado|granizado/i, '🍨'], [/batido|smoothie/i, '🥤'], [/tarta|bizcocho|pastel/i, '🍰'], [/yogur|griego|avena/i, '🥣'], [/tostada|pan /i, '🍞'],
+  [/queso|bolitas/i, '🧀'], [/jam[oó]n|rollito/i, '🥓'], [/agua/i, '💧'], [/champi/i, '🍄'], [/empanad/i, '🥟'], [/tortita|panqueque/i, '🥞']];
+const ART_BG = { desayuno: '#F4C76B', almuerzo: '#F08A3C', cena: '#7FA7E8', snack: '#9BCB7A', postre: '#E99AB8', bebida: '#7FD3D3' };
+function dishArt(r) {
+  const txt = r.n + ' ' + r.i.slice(0, 3).map(x => x[0]).join(' '); const em = [];
+  for (const [re, e] of ART) { if (re.test(r.n) && !em.includes(e)) em.push(e); if (em.length >= 2) break; }
+  const SAFE = ['🍗', '🐟', '🌭', '🥑', '🍌', '🥕', '🍎', '🍓', '🥥', '🍫', '🧀', '🥓', '🍄', '🥔', '🍳', '🍝', '🍚'];
+  if (em.length < 2) for (const [re, e] of ART) { if (SAFE.includes(e) && re.test(txt) && !em.includes(e)) em.push(e); if (em.length >= 2) break; }
+  if (!em.length) em.push('🍽️');
+  return `<div class="dish" aria-hidden="true" style="--dish:${ART_BG[r.tipos[0]] || '#ccc'}"><span class="d1">${em[0]}</span>${em[1] ? `<span class="d2">${em[1]}</span>` : ''}</div>`;
 }
 function recipeCard(r, explore) {
   const it = S.plan.find(p => p.rid === r.id && !p.cocinado); const cookedIt = S.plan.find(p => p.rid === r.id && p.cocinado); const hasOpc = r.i.some(x => x[2]);
@@ -376,7 +406,7 @@ function recipeCard(r, explore) {
   else if (!r.i.length) ctrl = '';
   else ctrl = `<span class="stepper" role="group" aria-label="Platos de ${esc(r.n)}"><button type="button" ${it ? `data-act="veces" data-k="${it.k}" data-d="-1"` : 'disabled'} aria-label="Un plato menos">−</button><b>${it ? it.veces : 0}</b><button type="button" class="plus" ${it ? `data-act="veces" data-k="${it.k}" data-d="1"` : `data-act="addone" data-id="${r.id}"`} aria-label="Un plato más">+</button></span>`;
   return `<article class="card">
-    <div class="card-head"><h3>${esc(r.n)}</h3>${explore ? '' : `<button type="button" class="link" data-act="unmine" data-id="${r.id}">Quitar</button>`}</div>
+    <div class="card-head with-art">${dishArt(r)}<h3>${esc(r.n)}</h3>${explore ? '' : `<button type="button" class="link" data-act="unmine" data-id="${r.id}">Quitar</button>`}</div>
     <div class="meta">${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc" title="Se cocina una vez y se come varios días">Para varios días</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
     <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración${kcalTxt(r, false)}</small></div>${ctrl}</div>
     ${it && !explore ? `<div class="small muted">En tu semana: ${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ≈ ${eur(perRacion(r, it.opc) * it.veces * eq())}</div>` : ''}
@@ -456,7 +486,7 @@ function renderSemana() {
   el.innerHTML = S.plan.map(it => {
     const r = byId(it.rid); if (!r) return ''; const pr = perRacion(r, it.opc); const hasOpc = r.i.some(x => x[2]);
     return `<article class="card">
-      <div class="card-head"><div><h3>${esc(r.n)}</h3><div class="small muted">${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ${eur(pr)} por ración${kcalTxt(r, it.opc)}</div></div><span class="price">${eur(pr * it.veces * e)}</span></div>
+      <div class="card-head with-art">${dishArt(r)}<div style="flex:1;min-width:0"><h3>${esc(r.n)}</h3><div class="small muted">${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ${eur(pr)} por ración${kcalTxt(r, it.opc)}</div></div><span class="price">${eur(pr * it.veces * e)}</span></div>
       <div class="meta" style="align-items:center;gap:10px">
         ${it.cocinado ? `<span class="tag acc">Cocinado · quedan ${leftOf(it)}</span>` : `<span class="stepper"><button type="button" data-act="veces" data-k="${it.k}" data-d="-1" aria-label="Un plato menos">−</button><b>${it.veces}</b><button type="button" class="plus" data-act="veces" data-k="${it.k}" data-d="1" aria-label="Un plato más">+</button></span>
         ${hasOpc ? `<label class="toggle"><input type="checkbox" data-act="opc" data-k="${it.k}" ${it.opc ? 'checked' : ''}> Con ${esc(optNames(r).join(' y '))}</label>` : ''}`}
