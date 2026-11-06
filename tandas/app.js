@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.8.2 · 7 nov';
+const VERSION = '2.8.3 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -65,6 +65,7 @@ function applyRegion(code) {
 }
 const r2 = v => Math.round(v * 100) / 100;
 const isC = n => !!(S.P[n] && S.P[n].c);
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; // fecha de HOY en tu zona (toISOString daría la de Greenwich: un día antes pasada la medianoche)
 const ucost = p => p.c ? p.p / (p.g || 1) : p.p / p.q;           // precio por unidad de receta (g/ml para consumibles)
 const rU = n => { const p = S.P[n]; return p ? (p.c ? (p.gu || 'g') : p.u) : 'ud'; };
 function lastTicketDate(s, n) { let d = 0; for (const t of s.tickets || []) if ((t.lineas || []).some(l => l.producto === n)) d = Math.max(d, new Date(t.fecha + 'T12:00').getTime()); return d; }
@@ -117,7 +118,7 @@ function buildCats(s) {
 
 /* ---------- Estado ---------- */
 // Red de seguridad: la primera vez que se abre la app cada día se guarda una copia del estado del día anterior (antes de cualquier ajuste)
-try { const raw = localStorage.getItem(KEY); const hoy = new Date().toISOString().slice(0, 10); if (raw && localStorage.getItem(KEY + '-dia') !== hoy) { localStorage.setItem(KEY + '-prev', raw); localStorage.setItem(KEY + '-dia', hoy); } } catch (e) {}
+try { const raw = localStorage.getItem(KEY); const hoy = localDay(); if (raw && localStorage.getItem(KEY + '-dia') !== hoy) { localStorage.setItem(KEY + '-prev', raw); localStorage.setItem(KEY + '-dia', hoy); } } catch (e) {}
 let S = load(); S.rq = '';
 function load() {
   const seed = JSON.parse(JSON.stringify(window.SEED));
@@ -361,12 +362,12 @@ function calcMonth(k) {
 function updateMonths() {
   S.months = S.months || {}; const keys = new Set([monthKey(new Date())]);
   for (const t of S.tickets || []) keys.add(String(t.fecha).slice(0, 7)); for (const x of S.log || []) keys.add(monthKey(new Date(x.ts)));
-  for (const k of keys) { if (!/^\d{4}-\d{2}$/.test(k)) continue; const c = calcMonth(k); const old = S.months[k];
+  for (const k of keys) { if (!/^\d{4}-\d{2}$/.test(k)) continue; const c = calcMonth(k); const old = S.months[k]; if (!old && !(c.tickets || c.comidas)) continue; /* un mes sin datos no se guarda ni se enseña */
     S.months[k] = old ? { ...c, comido: r2(Math.max(c.comido, old.comido || 0)), comidas: Math.max(c.comidas, old.comidas || 0) } : c; }
 }
 function monthBudget(k) { const [y, m] = k.split('-').map(Number); const days = new Date(y, m, 0).getDate(); return r2(S.budget * days / 7); }
 function monthsPanel() {
-  updateMonths(); const ks = Object.keys(S.months || {}).sort().reverse(); if (!ks.length) return '';
+  updateMonths(); const ks = Object.keys(S.months || {}).filter(k => { const m = S.months[k]; return m.tickets || m.comidas || m.comida || m.extras || m.comido; }).sort().reverse(); if (!ks.length) return '';
   const cur = monthKey(new Date()); const max = Math.max(...ks.map(k => S.months[k].comida + S.months[k].extras), 1);
   return `<section class="panel" aria-label="Historial por meses"><details class="months" ${S.monthsOpen ? 'open' : ''}><summary><h3 style="margin:0">Tus gastos por mes</h3><span class="small muted">${ks.length} ${ks.length === 1 ? 'mes' : 'meses'}</span></summary>
     ${ks.map(k => { const m = S.months[k]; const tot = r2(m.comida + m.extras); const pb = monthBudget(k); const over = tot > pb;
@@ -603,7 +604,7 @@ function renderHogar() {
   const cat = HCATS.includes(S.homeCat) ? S.homeCat : '';
   const counts = HCATS.map(c => have.filter(n => S.HP[n].cat === c).length);
   let html = `<div class="inv-sum"><b>${have.length}</b> ${have.length === 1 ? 'producto' : 'productos'} de casa · se separan solos al escanear el ticket</div>
-    <div class="chips inv-chips"><button type="button" class="chip" data-act="home-cat" data-c="" aria-pressed="${!cat}">Todo · ${have.length}</button>${HCATS.map((c, i) => `<button type="button" class="chip" data-act="home-cat" data-c="${esc(c)}" aria-pressed="${cat === c}">${esc(c)} · ${counts[i]}</button>`).join('')}</div>
+    <div class="chips inv-chips"><button type="button" class="chip" data-act="home-cat" data-c="" aria-pressed="${!cat}">Todo · ${have.length}</button>${HCATS.map((c, i) => counts[i] || cat === c ? `<button type="button" class="chip" data-act="home-cat" data-c="${esc(c)}" aria-pressed="${cat === c}">${esc(c)} · ${counts[i]}</button>` : '').join('')}</div>
     <div class="add-row"><input class="sel" id="h-name" list="h-names" placeholder="Producto (p. ej. champú)" aria-label="Producto de casa"><datalist id="h-names">${all.sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
       <select class="sel" id="h-cat" aria-label="Categoría" style="flex:0 1 140px">${HCATS.map(c => `<option>${esc(c)}</option>`).join('')}</select>
       <input class="qty" id="h-qty" type="number" min="1" step="1" value="1" aria-label="Cantidad"><button type="button" class="btn small" data-act="home-add">Añadir</button></div>`;
@@ -707,6 +708,8 @@ function toast(msg) {
   const ms = Math.max(4500, msg.length * 70) * (S.bigText ? 1.4 : 1); t.addEventListener('click', () => t.remove());
   const tm = setTimeout(() => t.remove(), ms); lastToast = { key: m ? m[2] : msg, n: 1, el: t, tm };
 }
+/* Tocar un aviso lo cierra. Los avisos dejan pasar los toques (no tapan Ajustes ni el asistente), así que se detecta por la posición del dedo */
+document.addEventListener('pointerdown', ev => { const hit = [...document.querySelectorAll('#toasts > .toast')].filter(t => { const r = t.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; }); hit.forEach(t => t.remove()); }, true);
 function eatOne(it) {
   const r = byId(it.rid); const t = mealOf(r) || (r.tipos.includes('snack') ? 'snack' : null);
   const wasCooked = !!it.cocinado;
@@ -736,7 +739,7 @@ document.addEventListener('click', ev => {
   if (b.id === 'btn-settings') return openSettings();
   if (b.id === 'btn-scan') return openScan();
   if (b.id === 'btn-ai') return openAI();
-  if (b.dataset.view) { setView(b.dataset.view); save(); window.scrollTo({ top: 0 }); return; }
+  if (b.dataset.view) { setView(b.dataset.view); applyNivel(); save(); window.scrollTo({ top: 0 }); return; }
   if (b.id === 'btn-compra') { const t = shop(S.plan).total;
     $('#pop-in').innerHTML = `<div class="pop-emoji" aria-hidden="true">🛒</div><h2>¿Ir a tu Lista de compras?</h2><p>${t > 0.005 ? `Ahí verás qué te falta comprar para tu semana (${eur(t)}).` : 'Ya tienes todo lo de tu semana, pero ahí puedes repasar la lista.'}</p><button type="button" class="btn wide" data-view="lista">Sí, ir a la Lista</button><button type="button" class="btn ghost wide" data-close style="margin-top:8px">No, quedarme aquí</button>`;
     $('#dlg-pop').showModal(); return; }
@@ -889,7 +892,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
     $('#dlg-settings').close(); render(); toast('Ajustes guardados');
   } else if (b.id === 'st-export') {
     const data = { ...S, apiKey: '', code: '' }; const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tandas-copia-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tandas-copia-${localDay()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Copia descargada (sin tu clave de API)');
   } else if (b.id === 'st-import') $('#file-backup').click();
   else if (b.id === 'st-restore') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Se pierde lo de hoy. Pulsa otra vez'; return; } try { localStorage.setItem(KEY, localStorage.getItem(KEY + '-prev')); location.reload(); } catch (e) { toast('No pude restaurar la copia'); } }
@@ -980,7 +983,7 @@ async function readTicket(file) {
         }
       }
     };
-    const prompt = `Lee este ticket. Hoy es ${new Date().toISOString().slice(0, 10)}.
+    const prompt = `Lee este ticket. Hoy es ${localDay()}.
 Catálogo de productos (nombre | unidad | formato):
 ${catalogText()}
 
@@ -997,7 +1000,7 @@ Reglas:
     const data = await claude({ tools: [tool], tool_choice: { type: 'tool', name: 'registrar_ticket' }, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt }] }] });
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
-    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || new Date().toISOString().slice(0, 10), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; return { es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
+    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; return { es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
     renderReview();
   } catch (e) {
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
@@ -1082,7 +1085,7 @@ $('#dlg-scan').addEventListener('click', ev => {
     S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Compra (solo total)', est: true, total: r2(tot), lineas });
     $('#dlg-scan').close(); render(); toast(`Apuntado: ${eur(tot)}. Lo de tu lista ya está en la despensa`);
   }
-  else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); }
+  else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: localDay(), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); }
   else if (b.dataset.rvdel !== undefined) { RV.lineas.splice(Number(b.dataset.rvdel), 1); renderReview(); }
   else if (b.id === 'rv-add') { RV.lineas.push({ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }); renderReview(); }
   else if (b.dataset.rvopen !== undefined) { RV.lineas[Number(b.dataset.rvopen)].open = true; renderReview(); }
@@ -1100,7 +1103,7 @@ $('#dlg-scan').addEventListener('change', ev => {
 });
 for (const id of ['#file-cam', '#file-gal']) $(id).addEventListener('change', ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-  if (!aiReady()) { RV = { tienda: '', fecha: new Date().toISOString().slice(0, 10), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); toast('Sin IA configurada: apúntalo a mano'); return; }
+  if (!aiReady()) { RV = { tienda: '', fecha: localDay(), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); toast('Sin IA configurada: apúntalo a mano'); return; }
   readTicket(f);
 });
 
@@ -1474,9 +1477,10 @@ $('#dlg-welcome').addEventListener('click', ev => {
     const bud = Number($('#wl-budget').value); if (bud > 0) S.budget = r2($('#wl-per').value === 'm' ? bud * 7 / 30.44 : bud);
     S.bigText = $('#wl-big').checked; applyTheme();
     S.name = n; if ($('#wl-region').value !== S.region) applyRegion($('#wl-region').value); if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); render(); toast(`¡Hola, ${n}!`);
-  } else if (b.id === 'wl-import') { const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
+  } else if (b.id === 'wl-import') { window._wlImport = true; const n = $('#wl-name').value.trim(); if (n) S.name = n; if ($('#wl-code')) S.code = $('#wl-code').value.trim(); save(); $('#dlg-welcome').close(); $('#file-backup').click(); }
 });
 $('#dlg-welcome').addEventListener('cancel', ev => ev.preventDefault());
+$('#dlg-welcome').addEventListener('close', () => { if (!S.name && !window._wlImport) setTimeout(openWelcome, 0); }); /* Escape o «Atrás» del móvil no deben dejar la app sin nombre */
 
 /* ---------- Arranque ---------- */
 render();
