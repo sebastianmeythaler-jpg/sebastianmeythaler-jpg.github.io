@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.8.3 · 7 nov';
+const VERSION = '2.9 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -257,14 +257,32 @@ function cookable() {
   }
   return { cnt, by };
 }
-function weekRange(d = new Date()) {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const start = new Date(x); start.setDate(x.getDate() - ((x.getDay() - S.weekStart + 7) % 7));
-  const end = new Date(start); end.setDate(start.getDate() + 7);
-  return { start, end };
+// El "periodo" empieza con el último ticket de compra (o con el botón «Empezar nuevo periodo»), no con el calendario.
+// Hasta entonces nada se pone a cero. Si aún no hay ninguno, arranca al principio de la semana actual.
+const CICLOS = { semana: ['semana', 'la semana', 'esta semana', 'Semana'], quincena: ['quincena', 'la quincena', 'esta quincena', 'Quincena'], mes: ['mes', 'el mes', 'este mes', 'Mes'] };
+const cicloTxt = () => CICLOS[S.ciclo] || CICLOS.semana;
+function calWeekStart(d = new Date()) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() - S.weekStart + 7) % 7)); return x.getTime(); }
+function weekRange() {
+  if (!S.cycleStart) { S.cycleStart = calWeekStart(); S.cycleAuto = true; }
+  return { start: new Date(S.cycleStart), end: new Date(8.64e15) };
+}
+const tkTs = t => { const m = /^t(\d{12,})/.exec(String(t.id || '')); return m ? Number(m[1]) : new Date(t.fecha + 'T12:00').getTime(); };
+function periodStats(a, b) {
+  const o = { gasto: 0, extras: 0, hogar: 0, comido: 0, comidas: 0, tickets: 0 };
+  for (const t of S.tickets || []) { const ts = tkTs(t); if (ts < a || ts >= b) continue; o.tickets++;
+    for (const l of t.lineas || []) { const v = Number(l.importe) || 0; if (l.tipo === 'Hogar') o.hogar += v; else if (l.tipo === 'Extra') { o.extras += v; o.gasto += v; } else o.gasto += v; } }
+  for (const x of S.log || []) if (x.ts >= a && x.ts < b) { o.comido += x.c || 0; if (x.t !== 'snack') o.comidas++; }
+  for (const f of ['gasto', 'extras', 'hogar', 'comido']) o[f] = r2(o[f]); return o;
+}
+// Cierra el periodo en curso (se archiva en S.cycles, sin borrar nada) y empieza otro en "ts"
+function newCycle(ts) {
+  ts = ts || Date.now(); const a = (weekRange().start).getTime(); if (ts <= a) return;
+  const st = periodStats(a, ts); S.cycles = S.cycles || [];
+  if (st.tickets || st.comidas || st.gasto) S.cycles.push({ start: a, end: ts, ...st });
+  S.cycleStart = ts; S.cycleAuto = false;
 }
 const dmy = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'numeric' });
-function weekTickets() { const { start, end } = weekRange(); return S.tickets.filter(t => { const d = new Date(t.fecha + 'T12:00'); return d >= start && d < end; }); }
+function weekTickets() { const { start, end } = weekRange(); return S.tickets.filter(t => { const d = tkTs(t); return d >= start.getTime() && d < end.getTime(); }); }
 function spentInfo() {
   const tk = weekTickets(); let planned = 0, extras = 0, home = 0; const groups = {};
   for (const t of tk) for (const l of t.lineas) {
@@ -305,12 +323,12 @@ function renderHeader() {
   $('#hoy').textContent = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^./, c => c.toUpperCase());
   const si = spentInfo(); const pend = shop(S.plan).total; const total = si.spent + pend;
   const pct = S.budget > 0 ? total / S.budget : 2; const lv = level(pct); const left = S.budget - total;
-  const scale = Math.max(total, S.budget) || 1; const { start, end } = weekRange(); const endShow = new Date(end); endShow.setDate(end.getDate() - 1);
+  const scale = Math.max(total, S.budget) || 1; const { start } = weekRange();
   const { cnt } = cookable(); const tot = S.target.desayuno + S.target.almuerzo + S.target.cena; const got = cnt.desayuno + cnt.almuerzo + cnt.cena;
   const pillTxt = lv === 'lv-over' ? (left < 0 ? 'Te pasas ' + eur(-left) : 'Al límite') : 'Quedan ' + eur(left);
   const sm = $('#summary'); sm.className = 'summary ' + lv; sm.setAttribute('aria-expanded', S.detailsOpen);
   sm.innerHTML = `
-    <div class="sum-row"><span class="small muted">Semana del ${dmy(start)} al ${dmy(endShow)}</span><span class="pill lv"><i></i>${pillTxt}</span></div>
+    <div class="sum-row"><span class="small muted">Desde tu última compra · ${dmy(start)}</span><span class="pill lv"><i></i>${pillTxt}</span></div>
     <div class="sum-row"><span class="sum-big">${eur(total)} <span>/ ${eur(S.budget)}</span></span><svg class="caret" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></div>
     <div class="seg" role="img" aria-label="Lo planificado ${eur(si.planned)}, extras ${eur(si.extras)}, falta comprar ${eur(pend)}">
       ${si.planned > 0 ? `<i style="width:${si.planned / scale * 100}%;background:var(--accent)"></i>` : ''}${si.extras > 0 ? `<i style="width:${si.extras / scale * 100}%;background:var(--warn)"></i>` : ''}${pend > 0 ? `<i style="width:${pend / scale * 100}%;background:var(--mid)"></i>` : ''}
@@ -339,13 +357,22 @@ function renderDetails(si, pend) {
     <div class="meals3">${MEALS.map(([k, l, c]) => `<div class="meal"><span>${l}</span><b>${cnt[k]}<small>/${S.target[k]}</small></b><div class="ln"><i style="width:${S.target[k] ? Math.min(100, cnt[k] / S.target[k] * 100) : 0}%;background:${c}"></i></div></div>`).join('')}</div>
     ${ideas ? `<p class="small muted" style="margin:0">Por ejemplo: ${ideas}</p>` : ''}
   </section>
+  ${cyclesPanel()}
   ${monthsPanel()}
   <section class="panel" aria-label="Tickets de la semana">
-    <h3>Tickets de la semana</h3>
+    <h3>Tickets de ${cicloTxt()[1]}</h3>
     ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
-  </section>`;
+  </section>
+  <section class="panel" aria-label="Nuevo periodo"><button type="button" class="btn ghost" id="btn-newcycle" data-act="new-cycle">Empezar ${S.ciclo === 'mes' ? 'nuevo mes' : 'nueva ' + cicloTxt()[0]}</button><p class="small muted" style="margin:8px 0 0">Los contadores (gasto, «lo que comes», snacks) vuelven a cero. Nada se borra: lo anterior queda guardado en «Tus compras anteriores». También se reinicia solo cuando subes un ticket nuevo.</p></section>`;
 }
 
+/* ---------- Historial por periodos (de compra a compra) ---------- */
+function cyclesPanel() {
+  const cs = (S.cycles || []).slice().reverse(); const cur = periodStats(weekRange().start.getTime(), 8.64e15);
+  const dm = t => dmy(new Date(t)); const row = (t, c, now) => `<div class="mrow"><div class="mh"><b>${dm(c.start)} → ${now ? 'hoy' : dm(c.end)}${now ? ' <span class="muted small">(en curso)</span>' : ''}</b><span class="num">${eur(c.gasto)}</span></div><div class="small muted">Gasto ${eur(c.gasto)}${c.extras ? ` (de ellos caprichos ${eur(c.extras)})` : ''}${c.hogar ? ` · Casa ${eur(c.hogar)}` : ''} · Comido ${eur(c.comido)}${c.comidas ? ` (${c.comidas} comidas)` : ''} · ${c.tickets} ${c.tickets === 1 ? 'ticket' : 'tickets'}</div></div>`;
+  if (!cs.length) return '';
+  return `<section class="panel" aria-label="Compras anteriores"><details class="months cyc" ${S.cyclesOpen ? 'open' : ''}><summary><h3 style="margin:0">Tus compras anteriores</h3><span class="small muted">${cs.length}</span></summary>${row(0, { start: weekRange().start.getTime(), ...cur }, true)}${cs.map(c => row(0, c, false)).join('')}</details></section>`;
+}
 /* ---------- Historial mensual ---------- */
 const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -512,7 +539,7 @@ function renderSnacks() {
 function eatSnack(n, q) {
   const p = S.P[n]; if (!p || !(q > 0)) return null; const have = S.stock[n] || 0; const used = Math.min(q, have || q);
   const left = have - q; if (left > 1e-6) S.stock[n] = r2(left); else delete S.stock[n];
-  const c = r2(used * ucost(p)); S.snacks = (S.snacks || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.snacks.push({ ts: Date.now(), n, q, c });
+  const c = r2(used * ucost(p)); S.snacks = (S.snacks || []).filter(x => Date.now() - x.ts < 800 * 864e5); S.snacks.push({ ts: Date.now(), n, q, c });
   logMeal('snack', `${n} (${fmtQ(q, p.u)})`, c); return c;
 }
 const MEAL_LABEL = { desayuno: 'Desayuno', almuerzo: 'Almuerzo', merienda: 'Merienda', cena: 'Cena', snack: 'Snack' };
@@ -719,7 +746,7 @@ function eatOne(it) {
   if (leftOf(it) <= 0) S.plan = S.plan.filter(p => p !== it);
 }
 function logMeal(t, n, c) {
-  S.log = (S.log || []).filter(x => Date.now() - x.ts < 60 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour(), n: n || '', c: r2(c || 0), v: 2 });
+  S.log = (S.log || []).filter(x => Date.now() - x.ts < 800 * 864e5); S.log.push({ ts: Date.now(), t: t || mealByHour(), n: n || '', c: r2(c || 0), v: 2 });
   if (S.pushId && t && PROXY) pushPost('push/comi', { id: S.pushId, comida: t }).catch(() => {});
 }
 function mealByHour(d = new Date()) { const h = d.getHours() + d.getMinutes() / 60; return h >= 5 && h < 11.5 ? 'desayuno' : h < 16.5 ? 'almuerzo' : h < 19.5 ? 'merienda' : 'cena'; }
@@ -782,11 +809,11 @@ document.addEventListener('click', ev => {
     }
     if (lineas.length) {
       const d = new Date(); const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Sin ticket (estimado)', est: true, total: r2(lineas.reduce((a, l) => a + l.importe, 0)), lineas });
+      const tsE = Date.now(); newCycle(tsE); S.tickets.push({ id: 't' + tsE, fecha, tienda: 'Sin ticket (estimado)', est: true, total: r2(lineas.reduce((a, l) => a + l.importe, 0)), lineas });
     }
     toast(`${n} ${n === 1 ? 'producto pasado' : 'productos pasados'} a la despensa. Gasto apuntado con el precio estimado`);
   }
-  else if (a === 'cons-snz') { S.snz[b.dataset.n] = weekRange().end.getTime(); toast('Vale, te lo vuelvo a recordar en la próxima compra'); }
+  else if (a === 'cons-snz') { S.snz[b.dataset.n] = Date.now() + 7 * 864e5; toast('Vale, te lo vuelvo a recordar en la próxima compra'); }
   else if (a === 'cons-out') { const n = b.dataset.n; delete S.stock[n]; S.want[n] = 1; delete S.snz[n]; toast(`${n} añadido a la lista`); }
   else if (a === 'inv-cat') { S.invCat = b.dataset.c; }
   else if (a === 'home-cat') { S.homeCat = b.dataset.c; }
@@ -797,6 +824,7 @@ document.addEventListener('click', ev => {
     const cnt = m === 'suelto' ? 0 : Number($('#inv-n').value) || 0, each = m === 'suelto' ? 0 : Number($('#inv-each').value) || (S.P[n] ? S.P[n].q : 0);
     const q = m === 'suelto' ? Number($('#inv-qty').value) || 0 : r2(cnt * each);
     if (m !== 'suelto' && Number($('#inv-each').value) > 0 && S.P[n] && !S.P[n].c && !S.P[n].t) { const p = S.P[n]; p.p = r2(p.p / p.q * each); p.q = each; } if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } S.invSel = n; toast(`Añadido: ${m === 'suelto' ? '' : cnt + ' ' + envLabel(m, cnt) + ' · '}${fmtQ(q, S.P[n].u)} de ${n}`); }
+  else if (a === 'new-cycle') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = `¿Seguro? Pulsa otra vez para empezar ${cicloTxt()[0] === 'mes' ? 'un nuevo mes' : 'una nueva ' + cicloTxt()[0]}`; return; } newCycle(Date.now() + 1); toast('Contadores a cero. Lo anterior sigue guardado en «Tus compras anteriores»'); }
   else if (a === 'del-ticket') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Borrar?'; return; } const tk = S.tickets.find(t => t.id === b.dataset.id); let undone = 0;
     for (const l of (tk && tk.lineas) || []) {
       if (l.producto && l.inv > 0 && S.P[l.producto]) { const v = (S.stock[l.producto] || 0) - l.inv; if (v > 1e-6) S.stock[l.producto] = r2(v); else delete S.stock[l.producto]; undone++; }
@@ -823,6 +851,7 @@ document.addEventListener('change', ev => {
   render();
 });
 document.addEventListener('toggle', ev => {
+  if (ev.target.classList && ev.target.classList.contains('cyc')) { S.cyclesOpen = ev.target.open; save(); return; }
   if (ev.target.classList && ev.target.classList.contains('months')) { S.monthsOpen = ev.target.open; save(); return; }
   const g = ev.target; if (g.dataset && g.dataset.group) { const set = new Set(S.openGroups || []); const was = set.has(g.dataset.group); g.open ? set.add(g.dataset.group) : set.delete(g.dataset.group); S.openGroups = [...set]; save(); if (g.open && !was && !g.querySelector('article')) renderRecetas(); return; }
   const d = ev.target; if (!d.dataset || !d.dataset.how) return; const set = new Set(S.openHow); d.open ? set.add(d.dataset.how) : set.delete(d.dataset.how); S.openHow = [...set]; save();
@@ -854,6 +883,7 @@ function openSettings() {
 
     <details class="adv"><summary>Ajustes avanzados</summary>
     <div class="grid2">
+      <label class="field">Cada cuánto haces la compra<select id="st-ciclo">${Object.keys(CICLOS).map(k => `<option value="${k}" ${k === (S.ciclo || 'semana') ? 'selected' : ''}>${CICLOS[k][3]}${k === 'quincena' ? ' (cada 15 días)' : k === 'semana' ? ' (cada 7 días)' : ''}</option>`).join('')}</select></label>
       <label class="field">La semana empieza el<select id="st-week">${DAYS.map((d, i) => `<option value="${i}" ${i === S.weekStart ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
       <label class="field">Adultos<input id="st-adults" type="number" min="1" max="8" value="${S.adults}"></label>
       <label class="field">Niños (½ ración)<input id="st-kids" type="number" min="0" max="8" value="${S.kids}"></label>
@@ -880,7 +910,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
   const b = ev.target.closest('button'); if (!b) return;
   if (b.dataset.close !== undefined) return $('#dlg-settings').close();
   if (b.id === 'st-save') {
-    S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value);
+    S.budget = Math.max(0, Number($('#st-budget').value) || 0); S.weekStart = Number($('#st-week').value); if (S.cycleAuto) S.cycleStart = calWeekStart(); S.ciclo = $('#st-ciclo').value;
     S.adults = Math.max(1, Math.round(Number($('#st-adults').value) || 1)); S.kids = Math.max(0, Math.round(Number($('#st-kids').value) || 0));
     for (const [k] of MEALS) S.target[k] = Math.max(0, Math.round(Number($('#st-t-' + k).value) || 0));
     S.enjoyPopup = $('#st-enjoy').checked; S.theme = $('#st-theme').value; S.bigText = $('#st-big').checked; applyTheme();
@@ -1040,7 +1070,7 @@ function saveReview() {
   const tot0 = r2(Number(RV.total) || RV.lineas.reduce((a, l) => a + (Number(l.importe) || 0), 0));
   const dup = S.tickets.find(t => t.fecha === RV.fecha && Math.abs(t.total - tot0) < 0.01);
   if (dup && !RV.dupOk) { RV.dupOk = true; toast(`Ojo: ya guardaste un ticket de ${eur(dup.total)} con esta fecha. Si es otro distinto, pulsa Guardar otra vez`); const btn = $('#rv-save'); if (btn) btn.textContent = 'Es otro ticket: guardar igualmente'; return; }
-  const id = 't' + Date.now(); const lineas = []; const learn = [];
+  const tsNew = Date.now(); const id = 't' + tsNew; const lineas = []; const learn = []; newCycle(tsNew);
   for (const l of RV.lineas) {
     if (!l.desc && !l.importe) continue;
     if (l.tipo === 'Hogar') {
@@ -1082,7 +1112,7 @@ $('#dlg-scan').addEventListener('click', ev => {
     for (const x of rows) { const inv = r2(x.packs * x.p.q); S.stock[x.n] = r2((S.stock[x.n] || 0) + inv); if (isC(x.n)) { S.since[x.n] = Date.now(); delete S.want[x.n]; delete S.snz[x.n]; } if (S.cart) delete S.cart[x.n];
       lineas.push({ desc: x.n, producto: x.n, inv, uds: x.packs, importe: r2(x.packs * x.p.p * k), tipo: 'De la lista', grupo: null }); }
     const d = new Date(); const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    S.tickets.push({ id: 't' + Date.now(), fecha, tienda: 'Compra (solo total)', est: true, total: r2(tot), lineas });
+    const tsN = Date.now(); newCycle(tsN); S.tickets.push({ id: 't' + tsN, fecha, tienda: 'Compra (solo total)', est: true, total: r2(tot), lineas });
     $('#dlg-scan').close(); render(); toast(`Apuntado: ${eur(tot)}. Lo de tu lista ya está en la despensa`);
   }
   else if (b.id === 'sc-manual') { RV = { tienda: '', fecha: localDay(), total: 0, lineas: [{ desc: '', uds: 1, importe: 0, producto: '', inv: 0, tipo: 'De la lista', grupo: 'Otros', env: 'paquete', man: 1 }] }; renderReview(); }

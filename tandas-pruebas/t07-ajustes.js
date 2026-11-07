@@ -17,7 +17,7 @@ T('Ajustes · el presupuesto se refleja en el resumen de arriba y en «Quedan»'
 T('Ajustes · adultos y niños cambian las cantidades de compra', async ({ p, h, ok }) => {
   await h.start(); await withPlan(h); const need = () => h.S(() => [...needs(S.plan).values()].reduce((a, b) => a + b, 0)); const t0 = await need(); await p.click('#btn-settings'); await p.locator('#settings-in details.adv summary').click(); await p.fill('#st-adults', '3'); await p.click('#st-save'); await p.waitForTimeout(150); ok(h.approx(await need(), t0 * 3, 0.5), 'con 3 adultos se necesita el triple de ingredientes');
 });
-T('Ajustes · «La semana empieza el» cambia el rango de la semana', async ({ p, h, ok, eq }) => {
+T('Ajustes · «La semana empieza el» cambia el inicio mientras no haya ticket nuevo', async ({ p, h, ok, eq }) => {
   await h.start(); const w0 = await h.S(() => weekRange().start.getDay()); await p.click('#btn-settings'); await p.locator('#settings-in details.adv summary').click(); await p.selectOption('#st-week', '3'); await p.click('#st-save'); await p.waitForTimeout(150); eq(await h.S(() => weekRange().start.getDay()), 3, 'la semana empieza en miércoles'); ok(w0 !== 3, 'antes no era miércoles');
 });
 T('Ajustes · cada estilo (tema) se aplica', async ({ p, h, ok, eq }) => {
