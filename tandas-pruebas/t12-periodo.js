@@ -58,3 +58,20 @@ T('Ticket · no pide tool_choice «tool»/«any» (este modelo da error 400) y l
   await h.start(); await setup(h); await h.scan(await h.ticketFromList({ extras: [{ desc: 'CHOCOLATE', uds: 1, importe: 2.5, producto: null, cantidad_inventario: 0, tipo: 'Extra', grupo: 'Otros' }] }));
   const c = env.aiCalls[env.aiCalls.length - 1]; ok(!c.tool_choice || c.tool_choice.type === 'auto', 'tool_choice automático'); ok(JSON.stringify(c.messages).includes('registrar_ticket'), 'le indica la herramienta'); ok(await p.locator('#rv-save').count() === 1, 'llega a la revisión');
 });
+const tkNuevo = (extra) => ({ tienda: 'Mercadona', fecha: '2026-11-07', total: 0, lineas: extra });
+T('Ticket · un producto que no está en el catálogo se crea y entra en la despensa', async ({ p, h, ok, eq }) => {
+  await h.start(); await setup(h); const l = { desc: 'CERDO TACOS 500G', uds: 2, importe: 7, producto: null, cantidad_inventario: 0, tipo: 'De la lista', nombre_nuevo: 'Cerdo en tacos', unidad_nueva: 'g', cantidad_envase: 500 };
+  const cat = await h.S(() => NEWCATS[0][0]); l.categoria_nueva = cat; await h.scan({ ...tkNuevo([l]), total: 7 });
+  ok(/Producto nuevo/.test(await p.locator('#scan-in').innerText()), 'lo enseña como producto nuevo'); eq(await p.locator('#scan-in .rv-attn').count(), 0, 'no hay nada en naranja'); await p.click('#rv-save'); await p.waitForTimeout(200);
+  ok(await h.S(() => !!S.P['Cerdo en tacos']), 'creado'); eq(await h.S(() => S.stock['Cerdo en tacos']), 1000, '2 bandejas de 500 g = 1000 g en la despensa'); eq(await h.S(() => S.P['Cerdo en tacos'].p), 3.5, 'precio por bandeja'); ok(await h.S(() => S.CATS.some(c => c.items.includes('Cerdo en tacos'))), 'aparece en una categoría');
+  await h.scan({ ...tkNuevo([{ ...l, importe: 8 }]), total: 8, fecha: '2026-11-08' }); await p.click('#rv-save'); await p.waitForTimeout(200); eq(await h.S(() => Object.keys(S.P).filter(k => /cerdo en tacos/i.test(k)).length), 1, 'la segunda vez no lo duplica'); eq(await h.S(() => S.stock['Cerdo en tacos']), 2000, 'suma a la despensa');
+});
+T('Ticket · «estropajo» y «esponja de cocina» son lo mismo (no duplica en Hogar)', async ({ p, h, ok, eq }) => {
+  await h.start(); await setup(h); const l = { desc: 'ESTROPAJO COCINA', uds: 1, importe: 1.5, producto: null, cantidad_inventario: 0, tipo: 'Hogar', producto_hogar: 'Estropajo de cocina', categoria_hogar: 'Limpieza' };
+  const n0 = await h.S(() => Object.keys(S.HP).length); const s0 = await h.S(() => S.hstock['Estropajos y esponjas'] || 0); await h.scan({ ...tkNuevo([l]), total: 1.5 }); await p.click('#rv-save'); await p.waitForTimeout(200);
+  eq(await h.S(() => Object.keys(S.HP).length), n0, 'no crea otro producto de casa'); eq(await h.S(() => S.hstock['Estropajos y esponjas']), s0 + 1, 'suma al que ya existía');
+});
+T('Hogar · los duplicados que ya había se juntan una sola vez al abrir la app', async ({ p, h, ok, eq }) => {
+  await h.start(); await h.S(() => { S.HP['Esponja de cocina'] = { cat: 'Limpieza', f: 'Unidad', p: 1, t: 1 }; S.hstock['Esponja de cocina'] = 2; S.hstock['Estropajos y esponjas'] = 1; S.hdupV = 0; save(); }); await p.reload(); await p.waitForTimeout(400);
+  eq(await h.S(() => Object.keys(S.HP).filter(k => /esponja|estropajo/i.test(k)).length), 1, 'queda uno'); eq(await h.S(() => Object.values(S.hstock).reduce((a, b) => a + b, 0) >= 3), true, 'conserva las unidades'); eq(await h.S(() => S.hstock['Estropajos y esponjas']), 3, 'suma 2 + 1');
+});

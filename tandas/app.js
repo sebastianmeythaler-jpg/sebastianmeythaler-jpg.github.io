@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.3 · 7 nov';
+const VERSION = '2.9.4 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -43,6 +43,29 @@ const HSEED = {
   'Fundas de basura': ['Cocina y hogar', 'Rollo 15 uds', 1.3], 'Papel de cocina': ['Cocina y hogar', 'Pack 2 rollos', 1.9], 'Papel de aluminio': ['Cocina y hogar', 'Rollo 30 m', 1.6],
   'Film transparente': ['Cocina y hogar', 'Rollo 30 m', 1.2], 'Servilletas': ['Cocina y hogar', 'Paquete 100 uds', 1], 'Bolsas de congelar': ['Cocina y hogar', 'Caja 30 uds', 1.4], 'Pilas': ['Otros', 'Pack 4', 3]
 };
+// Reconoce nombres que son lo mismo («Estropajo» = «Esponja de cocina», plurales, tildes)
+const SIN = { estropajo: 'esponja', fibra: 'esponja', bayeta: 'bayeta', gamuza: 'bayeta', lejia: 'lejia', cloro: 'lejia' };
+const NEUTRAL = new Set(['cocina', 'casa', 'hogar', 'limpieza', 'pack', 'set', 'uds', 'ud', 'unidad', 'unidades', 'paquete']);
+function nameTokens(n) {
+  return String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/).filter(w => w && !['de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'con', 'en', 'a', 'un', 'una', 'e'].includes(w))
+    .map(w => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w)).map(w => SIN[w] || w);
+}
+function sameName(a, b, loose) {
+  const A = new Set(nameTokens(a)), B = new Set(nameTokens(b)); if (!A.size || !B.size) return false;
+  if (A.size === B.size && [...A].every(x => B.has(x))) return true; if (!loose) return false;
+  const [small, big] = A.size <= B.size ? [A, B] : [B, A]; if (![...small].every(x => big.has(x))) return false;
+  return [...big].filter(x => !small.has(x)).every(x => NEUTRAL.has(x));
+}
+const findName = (name, keys, loose) => keys.find(k => k.toLowerCase() === String(name).toLowerCase()) || keys.find(k => sameName(k, name, loose));
+function mergeHogarDups(s) {
+  const ks = Object.keys(s.HP || {}); const seedHP = new Set(Object.keys((window.SEED && window.SEED.HP) || {}));
+  for (const a of ks) { if (!s.HP[a]) continue;
+    for (const b of Object.keys(s.HP)) { if (a === b || !s.HP[b] || !s.HP[a] || !sameName(a, b, true)) continue;
+      const keep = seedHP.has(a) || (!seedHP.has(b) && nameTokens(a).length <= nameTokens(b).length) ? a : b, drop = keep === a ? b : a;
+      s.hstock[keep] = r2((s.hstock[keep] || 0) + (s.hstock[drop] || 0)); if (s.hwant[drop]) s.hwant[keep] = s.hwant[drop]; if (!s.HP[keep].t && s.HP[drop].t) { s.HP[keep].p = s.HP[drop].p; s.HP[keep].t = 1; }
+      delete s.HP[drop]; delete s.hstock[drop]; delete s.hwant[drop];
+      for (const t of s.tickets || []) for (const l of t.lineas || []) if (l.hogar === drop) l.hogar = keep; } }
+}
 function ensureHome(s) {
   s.HP = s.HP || {}; s.hstock = s.hstock || {}; s.hwant = s.hwant || {}; s.homeCat = s.homeCat || '';
   for (const n in HSEED) if (!s.HP[n]) s.HP[n] = { cat: HSEED[n][0], f: HSEED[n][1], p: HSEED[n][2], t: 0 };
@@ -146,6 +169,7 @@ function load() {
   markCons(s); if (needCats) buildCats(s); placeCats(s); ensureHome(s);
   if (needModel) { s.model = 'claude-sonnet-5-5'; s.modelV = 1; }
   s.habits = s.habits || [];
+  if (!s.hdupV) { mergeHogarDups(s); s.hdupV = 1; }
   return s;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); if (S.remind && S.remind.on) mirrorState(); } catch (e) { toast('No se pudo guardar en este dispositivo'); } }
@@ -1023,6 +1047,10 @@ async function readTicket(file) {
                 uds: { type: 'number', description: 'Unidades o paquetes comprados' },
                 importe: { type: 'number', description: 'Importe total de la línea, en la moneda del ticket' },
                 nombre_comun: { type: ['string', 'null'], description: 'Nombre genérico y corto del producto tal como se dice normalmente en el país del ticket, sin marca ni peso (p. ej. Guineo, Fréjol rojo, Papa chola → Papa)' }, producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
+                nombre_nuevo: { type: ['string', 'null'], description: 'Solo si tipo es De la lista y producto es null (comida que no está en el catálogo): nombre corto y genérico para crearlo, p. ej. Cerdo en tacos, Salsa de tomate. null si no aplica' },
+                unidad_nueva: { type: ['string', 'null'], enum: ['g', 'ml', 'ud', null], description: 'Unidad del producto nuevo: g para sólidos al peso, ml para líquidos, ud para piezas' },
+                cantidad_envase: { type: ['number', 'null'], description: 'Producto nuevo: cantidad que trae cada unidad comprada en esa unidad (una bandeja de 500 g → 500; un brick de 1 L → 1000; si es por piezas, cuántas trae)' },
+                categoria_nueva: { type: ['string', 'null'], enum: NEWCATS.map(c => c[0]).concat([null]), description: 'Categoría del producto nuevo' },
                 cantidad_inventario: { type: 'number', description: 'Cantidad que entra a la despensa en la unidad del producto del catálogo (g, ml o ud). 0 si producto es null' },
                 tipo: { type: 'string', enum: ['De la lista', 'Extra', 'Hogar'] }, producto_hogar: { type: ['string', 'null'], description: 'Solo si tipo es Hogar: nombre corto y genérico (p. ej. Champú, Lavavajillas a mano); usa el de la lista de hogar si existe' }, categoria_hogar: { type: ['string', 'null'], enum: HCATS.concat([null]) },
                 grupo: { type: ['string', 'null'], enum: EXTRA_GROUPS.concat([null]) },
@@ -1043,6 +1071,8 @@ Productos que hacen falta para el menú de la semana: ${plan.join(', ') || 'ning
 Reglas:
 - Una línea por producto del ticket; ignora IVA, tarjeta y totales parciales. Si el ticket está en otra moneda, usa el importe en euros.
 - producto: el nombre exacto del catálogo si es claramente ese producto; si no, null.
+- Si es comida de cocinar que NO está en el catálogo (p. ej. cerdo en tacos), producto = null y rellena nombre_nuevo (nombre genérico corto), unidad_nueva, cantidad_envase y categoria_nueva para crearlo; así entra a la despensa.
+- Hogar: si es lo mismo que un producto de hogar ya conocido (estropajo, esponja y fibra son lo mismo; también lavavajillas y detergente a mano…), usa EXACTAMENTE el nombre conocido en producto_hogar; no inventes otro.
 - cantidad_inventario: uds × tamaño del formato del catálogo, en su unidad (ejemplo: 2 paquetes de quinoa de 250 g = 500). Para fruta al peso usa el peso o las unidades según la unidad del catálogo. Para productos CONSUMIBLES (especias, sazonadores) es el número de botes, no los gramos (2 botes de comino = 2).
 - tipo "Hogar": todo lo que no se come ni se bebe: aseo personal (pasta de dientes, champú, gel, desodorante, papel higiénico), limpieza (lavavajillas, esponjas, detergente, lejía) y cosas de casa (fundas o bolsas de basura, papel de cocina, aluminio, film, servilletas, pilas). En ese caso producto = null, cantidad_inventario = número de unidades, y rellena producto_hogar y categoria_hogar. Productos de hogar ya conocidos: ${Object.keys(S.HP).join(', ')}.
 - es_snack: true solo para galletas, barritas, chocolate, dulces, golosinas, snacks salados, helados o bollería; false para ingredientes de cocina y productos de uso largo (aceite, harina, azúcar, salsas…).
@@ -1051,7 +1081,10 @@ Reglas:
     if (data.stop_reason === 'max_tokens') throw new Error('El ticket tiene tantas líneas que la respuesta se cortó. Haz la foto en dos partes (arriba y abajo) y sube cada una, o apúntalo a mano.');
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
-    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; return { es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
+    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; let nn = null;
+      if (!sn && !S.P[l.producto] && l.tipo !== 'Hogar' && l.tipo !== 'Extra') { const nm = String(l.nombre_nuevo || l.nombre_comun || '').trim().replace(/^./, c => c.toUpperCase()); if (nm) { const same = findName(nm, Object.keys(S.P), false); const u = ['g', 'ml', 'ud'].includes(l.unidad_nueva) ? l.unidad_nueva : 'ud'; if (same) nn = { ex: same }; else nn = { name: nm, u, q: Number(l.cantidad_envase) > 0 ? Number(l.cantidad_envase) : 1, cat: l.categoria_nueva || '' }; } }
+      const hp = l.tipo === 'Hogar' ? (findName(l.producto_hogar || l.desc, Object.keys(S.HP), true) || '') : '';
+      return { nn: nn && nn.name ? nn : null, es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : nn && nn.ex ? nn.ex : nn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : nn && nn.ex ? (Number(l.uds) || 1) * (S.P[nn.ex].q || 1) : nn && nn.name ? (Number(l.uds) || 1) * nn.q : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: hp || l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
     renderReview();
   } catch (e) {
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
@@ -1065,11 +1098,11 @@ function renderReview() {
     <div class="grid2"><label class="field">Tienda<input data-rv="tienda" value="${esc(RV.tienda)}"></label><label class="field">Fecha<input type="date" data-rv="fecha" value="${esc(RV.fecha)}"></label></div>
     <label class="field">Total pagado (${SYM()})<input type="number" step="0.01" inputmode="decimal" data-rv="total" value="${RV.total}"></label>
     <div class="check ${Math.abs(diff) < 0.02 ? 'ok' : 'bad'}">${Math.abs(diff) < 0.02 ? `✓ Las líneas suman ${eur(sum)}, cuadra con el total` : `Las líneas suman ${eur(sum)}; diferencia de ${eur(diff)} con el total`}</div>
-    ${(() => { const ok = l => l.open ? false : l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && S.P[l.producto] && Number(l.importe) > 0 && Number(l.inv) > 0); const bad = RV.lineas.filter(l => !ok(l)).length;
+    ${(() => { const ok = l => l.open ? false : l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && (S.P[l.producto] || (l.producto === '__new' && l.nn)) && Number(l.importe) > 0 && Number(l.inv) > 0); const bad = RV.lineas.filter(l => !ok(l)).length;
       return `<p class="small" style="margin:0">${bad ? `Hay <b>${bad}</b> ${bad === 1 ? 'línea' : 'líneas'} que conviene revisar (en naranja). Lo demás está bien: puedes guardar directamente.` : 'Todo parece correcto. Si algo no cuadra, toca «Cambiar».'}</p>`; })()}
-    ${RV.lineas.map((l, i) => { const p = S.P[l.producto];
-      const isOk = !l.open && (l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && S.P[l.producto] && Number(l.importe) > 0 && Number(l.inv) > 0));
-      if (isOk && !l.man) return `<div class="rv-mini"><span class="ok">✓</span><span class="t"><b>${esc(l.tipo === 'Hogar' ? (l.hprod || l.desc) : l.tipo === 'Extra' ? l.desc : l.producto)}</b><small>${l.tipo === 'Hogar' ? 'Para casa' : l.tipo === 'Extra' ? 'Extra · ' + esc(l.grupo || '') : 'A la despensa: ' + (l.env && l.env !== 'suelto' ? l.uds + ' ' + envLabel(l.env, l.uds) + ' · ' : '') + fmtQ(Number(l.inv), p.u)}</small></span><span class="num">${eur(Number(l.importe) || 0)}</span><button type="button" class="link" data-rvopen="${i}">Cambiar</button></div>`;
+    ${RV.lineas.map((l, i) => { const p = S.P[l.producto] || (l.producto === '__new' && l.nn ? { u: l.nn.u, q: l.nn.q } : null);
+      const isOk = !l.open && (l.tipo === 'Hogar' ? !!(l.hprod || l.desc) : l.tipo === 'Extra' ? Number(l.importe) > 0 : !!(l.producto && (S.P[l.producto] || (l.producto === '__new' && l.nn)) && Number(l.importe) > 0 && Number(l.inv) > 0));
+      if (isOk && !l.man) return `<div class="rv-mini"><span class="ok">✓</span><span class="t"><b>${esc(l.tipo === 'Hogar' ? (l.hprod || l.desc) : l.tipo === 'Extra' ? l.desc : l.producto === '__new' && l.nn ? l.nn.name : l.producto)}</b><small>${l.tipo === 'Hogar' ? 'Para casa' : l.tipo === 'Extra' ? 'Extra · ' + esc(l.grupo || '') : (l.producto === '__new' ? 'Producto nuevo → ' : '') + 'A la despensa: ' + (l.env && l.env !== 'suelto' ? l.uds + ' ' + envLabel(l.env, l.uds) + ' · ' : '') + fmtQ(Number(l.inv), p.u)}</small></span><span class="num">${eur(Number(l.importe) || 0)}</span><button type="button" class="link" data-rvopen="${i}">Cambiar</button></div>`;
       return `<div class="rv ${isOk ? '' : 'rv-attn'}">${!l.producto && l.tipo === 'De la lista' ? '<p class="small" style="margin:0 0 6px;color:var(--mid)">¿Qué producto es? Elígelo, o cambia el tipo a «Extra» si fue un capricho.</p>' : ''}
       <div class="rv-top"><input data-i="${i}" data-f="desc" value="${esc(l.desc)}" aria-label="Descripción"><button type="button" class="icon-btn" data-rvdel="${i}" aria-label="Quitar línea" style="width:36px;height:36px">✕</button></div>
       <div class="rv-grid">
@@ -1095,14 +1128,19 @@ function saveReview() {
   for (const l of RV.lineas) {
     if (!l.desc && !l.importe) continue;
     if (l.tipo === 'Hogar') {
-      const hn = String(l.hprod || l.desc).trim().replace(/^./, c => c.toUpperCase()); const u = Math.max(1, Math.round(Number(l.uds) || 1));
+      let hn = String(l.hprod || l.desc).trim().replace(/^./, c => c.toUpperCase()); hn = findName(hn, Object.keys(S.HP), true) || hn; const u = Math.max(1, Math.round(Number(l.uds) || 1));
       if (!S.HP[hn]) S.HP[hn] = { cat: HCATS.includes(l.hcat) ? l.hcat : 'Otros', f: 'Unidad', p: 0, t: 0 };
       if (l.importe > 0) { S.HP[hn].p = r2(l.importe / u); S.HP[hn].t = 1; }
       S.hstock[hn] = (S.hstock[hn] || 0) + u; delete S.hwant[hn];
       lineas.push({ desc: l.desc, producto: null, hogar: hn, uds: u, importe: r2(Number(l.importe) || 0), tipo: 'Hogar', grupo: null }); continue;
     }
     let prod = l.producto || null;
-    if (prod === '__new') {
+    if (prod === '__new' && l.nn) {
+      prod = l.nn.name; const u = l.nn.u, q = l.nn.q;
+      if (!S.P[prod]) { S.P[prod] = { f: u === 'ud' && q === 1 ? 'Unidad' : `${q} ${u}`, p: r2((Number(l.importe) || 0) / Math.max(1, (Number(l.inv) || 0) / q || Number(l.uds) || 1)), q, u, t: 1 }; const cat = S.CATS.find(c => c.name.toLowerCase() === String(l.nn.cat).toLowerCase()) || S.CATS.find(c => c.name === 'Otros') || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
+      l.inv = Number(l.inv) || (Number(l.uds) || 1) * q;
+    }
+    else if (prod === '__new') {
       prod = l.desc.trim().toLowerCase().replace(/^./, c => c.toUpperCase());
       if (!S.P[prod]) { S.P[prod] = { f: 'Unidad', p: r2((l.importe || 0) / (l.uds || 1)), q: 1, u: 'ud', t: 1 }; if (l.es_snack) S.P[prod].snack = 1; const cat = (l.es_snack && S.CATS.find(c => c.name === 'Dulces y snacks')) || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
       l.inv = l.inv || l.uds || 1;
@@ -1195,7 +1233,7 @@ function runTool(name, x) {
     return `OK. Producto "${x.nombre}" creado.`;
   }
   if (name === 'ajustar_hogar') {
-    const n = String(x.producto || '').trim().replace(/^./, c => c.toUpperCase()); if (!n) return 'Error: falta el producto.';
+    let n = String(x.producto || '').trim().replace(/^./, c => c.toUpperCase()); if (!n) return 'Error: falta el producto.'; n = findName(n, Object.keys(S.HP), true) || n;
     if (!S.HP[n]) S.HP[n] = { cat: HCATS.includes(x.categoria) ? x.categoria : 'Otros', f: 'Unidad', p: 0, t: 0 };
     if (x.modo === 'a_la_lista') { S.hwant[n] = 1; return `OK. ${n} en la lista de compra de casa.`; }
     const cur = S.hstock[n] || 0; const v = Math.max(0, Math.round(x.modo === 'sumar' ? cur + x.cantidad : x.modo === 'restar' ? cur - x.cantidad : x.cantidad));
