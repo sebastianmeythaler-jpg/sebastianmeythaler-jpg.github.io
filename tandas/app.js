@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9 · 7 nov';
+const VERSION = '2.9.1 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -278,7 +278,8 @@ function periodStats(a, b) {
 function newCycle(ts) {
   ts = ts || Date.now(); const a = (weekRange().start).getTime(); if (ts <= a) return;
   const st = periodStats(a, ts); S.cycles = S.cycles || [];
-  if (st.tickets || st.comidas || st.gasto) S.cycles.push({ start: a, end: ts, ...st });
+  if (st.tickets || st.comidas || st.gasto || S.cycleNote) S.cycles.push({ start: a, end: ts, ...st, desp: r2(stockValue()), nota: S.cycleNote || '' });
+  S.cycleNote = '';
   S.cycleStart = ts; S.cycleAuto = false;
 }
 const dmy = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'numeric' });
@@ -328,7 +329,7 @@ function renderHeader() {
   const pillTxt = lv === 'lv-over' ? (left < 0 ? 'Te pasas ' + eur(-left) : 'Al límite') : 'Quedan ' + eur(left);
   const sm = $('#summary'); sm.className = 'summary ' + lv; sm.setAttribute('aria-expanded', S.detailsOpen);
   sm.innerHTML = `
-    <div class="sum-row"><span class="small muted">Desde tu última compra · ${dmy(start)}</span><span class="pill lv"><i></i>${pillTxt}</span></div>
+    <div class="sum-row"><span class="small muted">Desde tu última compra · ${dmy(start)} · día ${cycDays(start.getTime(), Date.now())}</span><span class="pill lv"><i></i>${pillTxt}</span></div>
     <div class="sum-row"><span class="sum-big">${eur(total)} <span>/ ${eur(S.budget)}</span></span><svg class="caret" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></div>
     <div class="seg" role="img" aria-label="Lo planificado ${eur(si.planned)}, extras ${eur(si.extras)}, falta comprar ${eur(pend)}">
       ${si.planned > 0 ? `<i style="width:${si.planned / scale * 100}%;background:var(--accent)"></i>` : ''}${si.extras > 0 ? `<i style="width:${si.extras / scale * 100}%;background:var(--warn)"></i>` : ''}${pend > 0 ? `<i style="width:${pend / scale * 100}%;background:var(--mid)"></i>` : ''}
@@ -363,15 +364,27 @@ function renderDetails(si, pend) {
     <h3>Tickets de ${cicloTxt()[1]}</h3>
     ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
   </section>
-  <section class="panel" aria-label="Nuevo periodo"><button type="button" class="btn ghost" id="btn-newcycle" data-act="new-cycle">Empezar ${S.ciclo === 'mes' ? 'nuevo mes' : 'nueva ' + cicloTxt()[0]}</button><p class="small muted" style="margin:8px 0 0">Los contadores (gasto, «lo que comes», snacks) vuelven a cero. Nada se borra: lo anterior queda guardado en «Tus compras anteriores». También se reinicia solo cuando subes un ticket nuevo.</p></section>`;
+  ${newCyclePanel()}`;
 }
 
 /* ---------- Historial por periodos (de compra a compra) ---------- */
+const CICLO_DIAS = { semana: 9, quincena: 18, mes: 35 };
+const cycDays = (a, b) => Math.max(1, Math.ceil((b - a) / 864e5));
+function newCyclePanel() {
+  const a = weekRange().start.getTime(), now = Date.now(), days = cycDays(a, now), st = periodStats(a, now), c = cicloTxt(); const prev = (S.cycles || [])[(S.cycles || []).length - 1];
+  const late = days > (CICLO_DIAS[S.ciclo] || 9); let cmp = '';
+  if (prev && prev.gasto > 0 && st.gasto > 0) { const pd = prev.gasto / cycDays(prev.start, prev.end), cd = st.gasto / days; const df = r2((cd - pd) * days); cmp = Math.abs(df) < 0.5 ? 'Vas al mismo ritmo que el periodo anterior.' : df < 0 ? `Vas ${eur(-df)} por debajo del ritmo del periodo anterior.` : `Vas ${eur(df)} por encima del ritmo del periodo anterior.`; }
+  return `<section class="panel" aria-label="Periodo en curso"><h3>Periodo en curso · día ${days}</h3>
+    <div class="small muted">Gasto ${eur(st.gasto)} (≈ ${eur(st.gasto / days)} al día) · Comido ${eur(st.comido)}${st.comidas ? ` (${st.comidas} comidas)` : ''}</div>
+    ${cmp ? `<div class="small" style="margin-top:4px">${cmp}</div>` : ''}
+    <label class="field" style="margin:10px 0 0">Nota del periodo (opcional)<input id="cyc-note" type="text" maxlength="60" placeholder="Ej.: semana de visitas" value="${esc(S.cycleNote || '')}"></label>
+    ${late ? `<p class="small" style="margin:10px 0 0">Llevas ${days} días en este periodo. Si ya hiciste otra compra, súbela o empieza uno nuevo.</p>` : ''}
+    <button type="button" class="btn ghost" id="btn-newcycle" data-act="new-cycle" style="margin-top:10px">Empezar ${S.ciclo === 'mes' ? 'nuevo mes' : 'nueva ' + c[0]}</button><p class="small muted" style="margin:8px 0 0">Los contadores vuelven a cero. Nada se borra: lo anterior queda en «Tus compras anteriores». También se reinicia solo al subir un ticket nuevo.</p></section>`;
+}
 function cyclesPanel() {
-  const cs = (S.cycles || []).slice().reverse(); const cur = periodStats(weekRange().start.getTime(), 8.64e15);
-  const dm = t => dmy(new Date(t)); const row = (t, c, now) => `<div class="mrow"><div class="mh"><b>${dm(c.start)} → ${now ? 'hoy' : dm(c.end)}${now ? ' <span class="muted small">(en curso)</span>' : ''}</b><span class="num">${eur(c.gasto)}</span></div><div class="small muted">Gasto ${eur(c.gasto)}${c.extras ? ` (de ellos caprichos ${eur(c.extras)})` : ''}${c.hogar ? ` · Casa ${eur(c.hogar)}` : ''} · Comido ${eur(c.comido)}${c.comidas ? ` (${c.comidas} comidas)` : ''} · ${c.tickets} ${c.tickets === 1 ? 'ticket' : 'tickets'}</div></div>`;
-  if (!cs.length) return '';
-  return `<section class="panel" aria-label="Compras anteriores"><details class="months cyc" ${S.cyclesOpen ? 'open' : ''}><summary><h3 style="margin:0">Tus compras anteriores</h3><span class="small muted">${cs.length}</span></summary>${row(0, { start: weekRange().start.getTime(), ...cur }, true)}${cs.map(c => row(0, c, false)).join('')}</details></section>`;
+  const cs = (S.cycles || []).slice().reverse(); if (!cs.length) return ''; const dm = t => dmy(new Date(t));
+  const row = c => { const d = cycDays(c.start, c.end); return `<div class="mrow"><div class="mh"><b>${dm(c.start)} → ${dm(c.end)}</b><span class="num">${eur(c.gasto)}</span></div>${c.nota ? `<div class="small">${esc(c.nota)}</div>` : ''}<div class="small muted">${d} ${d === 1 ? 'día' : 'días'} · ≈ ${eur(c.gasto / d)} al día${c.extras ? ` · caprichos ${eur(c.extras)}` : ''}${c.hogar ? ` · Casa ${eur(c.hogar)}` : ''}</div><div class="small muted">Comido ${eur(c.comido)}${c.comidas ? ` (${c.comidas} comidas)` : ''}${c.desp != null ? ` · Quedó en la despensa ≈ ${eur(c.desp)}` : ''} · ${c.tickets} ${c.tickets === 1 ? 'ticket' : 'tickets'}</div></div>`; };
+  return `<section class="panel" aria-label="Compras anteriores"><details class="months cyc" ${S.cyclesOpen ? 'open' : ''}><summary><h3 style="margin:0">Tus compras anteriores</h3><span class="small muted">${cs.length}</span></summary>${cs.map(row).join('')}</details></section>`;
 }
 /* ---------- Historial mensual ---------- */
 const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -836,6 +849,7 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('change', ev => {
   const t = ev.target;
+  if (t.id === 'cyc-note') { S.cycleNote = t.value.trim().slice(0, 60); save(); return; }
   if (t.id === 'only-tanda') S.onlyTanda = t.checked;
   else if (t.id === 'sn-prod') { S.snackSel = t.value; $('#sn-unit').textContent = S.P[t.value].u; $('#sn-qty').value = snackDefault(t.value); save(); return; }
   else if (t.id === 'inv-prod' || t.id === 'inv-mode') { if (t.id === 'inv-prod') S.invSel = t.value; else S.invMode = t.value; $('#inv-qbox').innerHTML = invAddRow(S.P[$('#inv-prod').value]); save(); return; }

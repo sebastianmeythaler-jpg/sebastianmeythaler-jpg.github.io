@@ -36,3 +36,17 @@ T('Periodo · tras un ticket, cambiar «La semana empieza el» ya no mueve el pe
   await h.start(); await setup(h); await saveTicket(h, p, {}); const s0 = await h.S(() => S.cycleStart); await p.click('#btn-settings'); await p.locator('#settings-in details.adv summary').click(); await p.selectOption('#st-week', '3'); await p.click('#st-save'); await p.waitForTimeout(150);
   eq(await h.S(() => S.cycleStart), s0, 'el inicio sigue siendo el del ticket');
 });
+T('Periodo · el panel muestra día, gasto por día y compara con el periodo anterior', async ({ p, h, ok, eq }) => {
+  await h.start(); await setup(h); await eatFuera(h); await p.context().clock.setSystemTime(new Date('2026-11-09T10:00:00+01:00')); await saveTicket(h, p, {});
+  await h.S(() => { S.detailsOpen = true; render(); }); const t = await p.locator('#details').innerText();
+  ok(/Periodo en curso · día 1/.test(t), 'día 1 del periodo nuevo'); ok(/al día/.test(t), 'gasto al día'); ok(!/NaN|undefined/.test(t), 'sin NaN');
+  await h.S(() => { S.cycles[0].gasto = 100; S.cycles[0].end = S.cycles[0].start + 864e5 * 7; render(); }); ok(/por (debajo|encima) del ritmo|mismo ritmo/.test(await p.locator('#details').innerText()), 'compara con el anterior');
+});
+T('Periodo · aviso suave cuando se alarga y la nota se guarda en el archivo', async ({ p, h, ok, eq }) => {
+  await h.start(); await setup(h); await eatFuera(h); await h.S(() => { S.detailsOpen = true; render(); }); ok(!/Llevas \d+ días/.test(await p.locator('#details').innerText()), 'al principio no avisa');
+  await p.fill('#cyc-note', 'semana de visitas'); await p.press('#cyc-note', 'Tab'); eq(await h.S(() => S.cycleNote), 'semana de visitas', 'nota guardada');
+  await p.context().clock.setSystemTime(new Date('2026-11-20T10:00:00+01:00')); await p.reload(); await p.waitForTimeout(300); await h.S(() => { S.detailsOpen = true; render(); }); ok(/Llevas 1\d días/.test(await p.locator('#details').innerText()), 'avisa pasados los días');
+  ok(/día 1\d/.test(await p.locator('#summary').innerText()), 'el resumen muestra el día');
+  await saveTicket(h, p, {}); eq(await h.S(() => S.cycles[0].nota), 'semana de visitas', 'la nota queda archivada'); ok(await h.S(() => S.cycles[0].desp >= 0), 'guarda lo que quedó en la despensa'); eq(await h.S(() => S.cycleNote), '', 'el nuevo periodo empieza sin nota');
+  await h.S(() => { S.detailsOpen = true; S.cyclesOpen = true; render(); }); const t = await p.locator('#details').innerText(); ok(/semana de visitas/.test(t) && /Quedó en la despensa/.test(t), 'el historial la enseña');
+});
