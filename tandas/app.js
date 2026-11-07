@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.2 · 7 nov';
+const VERSION = '2.9.3 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -956,6 +956,12 @@ $('#file-backup').addEventListener('change', async ev => {
 /* ---------- IA: llamada a la API ---------- */
 async function claude(body) {
   if (!aiReady()) throw new Error(PROXY ? 'Falta tu código de invitación. Añádelo en Ajustes.' : 'Falta la clave de API. Añádela en Ajustes.');
+  // Este modelo no admite tool_choice «tool»/«any»: se pide con «auto» y se le indica en el mensaje qué herramienta usar.
+  if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) {
+    const nm = body.tool_choice.name || (body.tools && body.tools[0] && body.tools[0].name); body = { ...body, tool_choice: { type: 'auto' } };
+    const ms = body.messages.slice(), l = ms[ms.length - 1], extra = { type: 'text', text: `Responde SOLO llamando a la herramienta «${nm}».` };
+    ms[ms.length - 1] = { ...l, content: typeof l.content === 'string' ? [{ type: 'text', text: l.content }, extra] : [...l.content, extra] }; body.messages = ms;
+  }
   const direct = !!S.apiKey;
   let res;
   try {

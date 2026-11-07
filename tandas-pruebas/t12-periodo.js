@@ -54,3 +54,7 @@ T('Ticket · pide margen de respuesta suficiente y avisa claro si la respuesta s
   await h.start(); await setup(h); env.truncate = true; env.nextTicket = {}; await p.evaluate(() => { S.apiKey = 'sk-ant-test'; save(); }); await p.locator('#btn-scan').click(); await h.scanFile(); await p.waitForSelector('#scan-in .check.bad', { timeout: 5000 });
   ok(/dos partes/.test(await p.locator('#scan-in').innerText()), 'explica qué hacer'); ok(env.aiCalls[env.aiCalls.length - 1].max_tokens >= 6000, 'pide 6000 tokens: ' + env.aiCalls[env.aiCalls.length - 1].max_tokens); env.truncate = false;
 });
+T('Ticket · no pide tool_choice «tool»/«any» (este modelo da error 400) y lee el ticket', async ({ p, h, env, ok, eq }) => {
+  await h.start(); await setup(h); await h.scan(await h.ticketFromList({ extras: [{ desc: 'CHOCOLATE', uds: 1, importe: 2.5, producto: null, cantidad_inventario: 0, tipo: 'Extra', grupo: 'Otros' }] }));
+  const c = env.aiCalls[env.aiCalls.length - 1]; ok(!c.tool_choice || c.tool_choice.type === 'auto', 'tool_choice automático'); ok(JSON.stringify(c.messages).includes('registrar_ticket'), 'le indica la herramienta'); ok(await p.locator('#rv-save').count() === 1, 'llega a la revisión');
+});

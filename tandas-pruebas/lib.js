@@ -20,6 +20,8 @@ async function newEnv(browser, opts = {}) {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204 });
     if (env.offline) return r.abort('internetdisconnected');
     const body = JSON.parse(r.request().postData() || '{}'); env.aiCalls.push(body);
+    if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) return r.fulfill({ status: 400, json: { type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice:type "tool" and "any" are not supported for this model.' } } });
+    if (!body.tool_choice || body.tool_choice.type === 'auto') { const one = body.tools && body.tools.length === 1 ? body.tools[0].name : null; if (one) body.tool_choice = { type: 'auto', name: one }; }
     if (body.tool_choice && body.tool_choice.name === 'registrar_ticket' && env.truncate) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: { tienda: 'X', lineas: [] } }] } });
     if (body.tool_choice && body.tool_choice.name === 'registrar_ticket') return r.fulfill({ json: { content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: env.nextTicket }] } });
     if (body.tool_choice && body.tool_choice.name && env.forced[body.tool_choice.name]) return r.fulfill({ json: { content: [{ type: 'tool_use', id: 'f', name: body.tool_choice.name, input: env.forced[body.tool_choice.name] }] } });
