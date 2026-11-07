@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.1 · 7 nov';
+const VERSION = '2.9.2 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -976,7 +976,7 @@ async function claude(body) {
     if (res.status === 404 && /model/i.test(m)) throw new Error('El modelo elegido no está disponible. Cambia de modelo en Ajustes.');
     console.error('API', res.status, m);
     if (res.status >= 500 || res.status === 529) throw new Error('La IA está saturada ahora mismo. Prueba en un minuto.');
-    throw new Error('No he podido responder esta vez. Vuelve a intentarlo.');
+    throw new Error(`No he podido responder esta vez (código ${res.status}${m ? ': ' + m.slice(0, 80) : ''}). Vuelve a intentarlo.`);
   }
   return data;
 }
@@ -1041,7 +1041,8 @@ Reglas:
 - tipo "Hogar": todo lo que no se come ni se bebe: aseo personal (pasta de dientes, champú, gel, desodorante, papel higiénico), limpieza (lavavajillas, esponjas, detergente, lejía) y cosas de casa (fundas o bolsas de basura, papel de cocina, aluminio, film, servilletas, pilas). En ese caso producto = null, cantidad_inventario = número de unidades, y rellena producto_hogar y categoria_hogar. Productos de hogar ya conocidos: ${Object.keys(S.HP).join(', ')}.
 - es_snack: true solo para galletas, barritas, chocolate, dulces, golosinas, snacks salados, helados o bollería; false para ingredientes de cocina y productos de uso largo (aceite, harina, azúcar, salsas…).
 - tipo: "De la lista" si es comida básica de cocinar o un producto del catálogo usado en recetas; "Extra" si es dulce, capricho, snack o bebida no planificada. Si es Extra, elige grupo.`;
-    const data = await claude({ tools: [tool], tool_choice: { type: 'tool', name: 'registrar_ticket' }, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt }] }] });
+    const data = await claude({ max_tokens: 6000, tools: [tool], tool_choice: { type: 'tool', name: 'registrar_ticket' }, messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt }] }] });
+    if (data.stop_reason === 'max_tokens') throw new Error('El ticket tiene tantas líneas que la respuesta se cortó. Haz la foto en dos partes (arriba y abajo) y sube cada una, o apúntalo a mano.');
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
     RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; return { es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };

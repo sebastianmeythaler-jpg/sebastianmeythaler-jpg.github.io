@@ -20,6 +20,7 @@ async function newEnv(browser, opts = {}) {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204 });
     if (env.offline) return r.abort('internetdisconnected');
     const body = JSON.parse(r.request().postData() || '{}'); env.aiCalls.push(body);
+    if (body.tool_choice && body.tool_choice.name === 'registrar_ticket' && env.truncate) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: { tienda: 'X', lineas: [] } }] } });
     if (body.tool_choice && body.tool_choice.name === 'registrar_ticket') return r.fulfill({ json: { content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: env.nextTicket }] } });
     if (body.tool_choice && body.tool_choice.name && env.forced[body.tool_choice.name]) return r.fulfill({ json: { content: [{ type: 'tool_use', id: 'f', name: body.tool_choice.name, input: env.forced[body.tool_choice.name] }] } });
     const last = body.messages[body.messages.length - 1];

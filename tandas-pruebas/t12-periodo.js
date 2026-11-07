@@ -50,3 +50,7 @@ T('Periodo · aviso suave cuando se alarga y la nota se guarda en el archivo', a
   await saveTicket(h, p, {}); eq(await h.S(() => S.cycles[0].nota), 'semana de visitas', 'la nota queda archivada'); ok(await h.S(() => S.cycles[0].desp >= 0), 'guarda lo que quedó en la despensa'); eq(await h.S(() => S.cycleNote), '', 'el nuevo periodo empieza sin nota');
   await h.S(() => { S.detailsOpen = true; S.cyclesOpen = true; render(); }); const t = await p.locator('#details').innerText(); ok(/semana de visitas/.test(t) && /Quedó en la despensa/.test(t), 'el historial la enseña');
 });
+T('Ticket · pide margen de respuesta suficiente y avisa claro si la respuesta se corta', async ({ p, h, env, ok, eq }) => {
+  await h.start(); await setup(h); env.truncate = true; env.nextTicket = {}; await p.evaluate(() => { S.apiKey = 'sk-ant-test'; save(); }); await p.locator('#btn-scan').click(); await h.scanFile(); await p.waitForSelector('#scan-in .check.bad', { timeout: 5000 });
+  ok(/dos partes/.test(await p.locator('#scan-in').innerText()), 'explica qué hacer'); ok(env.aiCalls[env.aiCalls.length - 1].max_tokens >= 6000, 'pide 6000 tokens: ' + env.aiCalls[env.aiCalls.length - 1].max_tokens); env.truncate = false;
+});
