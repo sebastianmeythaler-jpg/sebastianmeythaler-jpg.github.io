@@ -11,7 +11,7 @@ async function newEnv(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 360, height: 740 }, hasTouch: true, isMobile: true, acceptDownloads: true, serviceWorkers: 'block', timezoneId: 'Europe/Madrid', locale: 'es-ES' });
   await ctx.clock.install({ time: opts.start || START });
   const p = await ctx.newPage(); p.setDefaultTimeout(3000);
-  const env = { ctx, p, errors: [], forced: {}, nextTicket: null, chat: [], offline: false, aiCalls: [], push: [], fails: [], passes: 0 };
+  const env = { ctx, p, errors: [], forced: {}, nextTicket: null, chat: [], offline: false, aiCalls: [], contract: [], workerCap: 6000, push: [], fails: [], passes: 0 };
   p.on('pageerror', e => env.errors.push('JS: ' + e.message));
   p.on('console', m => { if (m.type() === 'error' && !/fonts|ERR_|Failed to load resource|net::|API 5/.test(m.text())) env.errors.push('consola: ' + m.text().slice(0, 200)); });
   p.on('dialog', d => { env.errors.push('diálogo del navegador: ' + d.message()); d.dismiss(); });
@@ -20,6 +20,8 @@ async function newEnv(browser, opts = {}) {
     if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204 });
     if (env.offline) return r.abort('internetdisconnected');
     const body = JSON.parse(r.request().postData() || '{}'); env.aiCalls.push(body);
+    { const bad = contractErrors(body, env); if (bad) { env.contract.push(bad); return r.fulfill({ status: 400, json: { type: 'error', error: { type: 'invalid_request_error', message: bad } } }); } }
+    if (body.tools && body.tools.length === 1 && body.tools[0].name === 'registrar_ticket' && !env.truncate) { const n = ((env.nextTicket || {}).lineas || []).length; if (n * 85 + 150 > Math.min(body.max_tokens || 1000, env.workerCap)) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: {} }] } }); }
     if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) return r.fulfill({ status: 400, json: { type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice:type "tool" and "any" are not supported for this model.' } } });
     if (!body.tool_choice || body.tool_choice.type === 'auto') { const one = body.tools && body.tools.length === 1 ? body.tools[0].name : null; if (one) body.tool_choice = { type: 'auto', name: one }; }
     if (body.tool_choice && body.tool_choice.name === 'registrar_ticket' && env.truncate) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: { tienda: 'X', lineas: [] } }] } });
@@ -69,6 +71,20 @@ function helpers(env) {
 }
 
 // comprobaciones que se hacen SIEMPRE al acabar cada prueba
+// Reglas reales de la API y del servidor intermedio que la app debe cumplir (si no, el móvil recibe un error 400)
+function contractErrors(body, env) {
+  if (!body.model) return 'falta model'; if (!(body.max_tokens > 0)) return 'falta max_tokens'; if (!Array.isArray(body.messages) || !body.messages.length) return 'messages vacío';
+  if (body.messages[body.messages.length - 1].role !== 'user') return 'el último mensaje debe ser del usuario';
+  if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) return 'tool_choice:type "tool" and "any" are not supported for this model.';
+  for (const m of body.messages) for (const c of Array.isArray(m.content) ? m.content : []) {
+    if (c.type === 'image') { const d = c.source && c.source.data || ''; if (c.source.media_type !== 'image/jpeg' || !/^[A-Za-z0-9+/=]+$/.test(d) || d.length > 6.5e6) return 'imagen no válida'; }
+    if (c.type === 'text' && !String(c.text).trim()) return 'bloque de texto vacío';
+  }
+  for (const t of body.tools || []) { if (!t.name || !t.input_schema || t.input_schema.type !== 'object') return 'herramienta mal definida ' + t.name;
+    const pr = t.input_schema.properties || {}; for (const r of t.input_schema.required || []) if (!pr[r]) return `herramienta ${t.name}: «${r}» es obligatorio pero no está definido`;
+    for (const [k, v] of Object.entries(pr)) if (!v.type && !v.enum && !v.anyOf) return `herramienta ${t.name}: «${k}» sin tipo`; }
+  return '';
+}
 async function invariants(env) {
   const { p } = env; const out = [];
   const r = await p.evaluate(() => {
@@ -85,10 +101,11 @@ async function invariants(env) {
     for (const id of S.mine || []) if (!byId(id)) o.push('Receta de «mi recetario» inexistente ' + id);
     if (!isFinite(S.budget) || S.budget < 0) o.push('Presupuesto inválido ' + S.budget);
     if (typeof calcMonth === 'function') { updateMonths(); for (const [k, m] of Object.entries(S.months || {})) { const c = calcMonth(k); if (Math.abs(c.comida + c.extras - (m.comida + m.extras)) > 0.01) o.push('Historial ' + k + ' no cuadra con tickets'); } }
+    { const key = n => nameTokens(n).slice().sort().join(' '); const seen = {}; for (const n of Object.keys(S.P)) { const k = key(n); if (k && seen[k]) o.push(`Producto duplicado: «${seen[k]}» y «${n}»`); else seen[k] = n; } const seenH = {}; for (const n of Object.keys(S.HP || {})) for (const m of Object.keys(S.HP)) if (n < m && sameName(n, m, true)) o.push(`Producto de casa duplicado: «${n}» y «${m}»`); }
     const sc = document.querySelector('#s-compra'); if (sc && /NaN|undefined/.test(sc.textContent)) o.push('Cuadro «Te falta comprar» roto');
     return o;
   }).catch(e => ['No se pudo revisar el estado: ' + e.message]);
-  out.push(...r); out.push(...env.errors); return out;
+  out.push(...r); out.push(...env.errors); out.push(...env.contract.map(c => 'Petición a la IA rechazada: ' + c)); return out;
 }
 
 async function run(filter, o = {}) {

@@ -48,3 +48,10 @@ T('Zona · lo que debe pasar', async ({ p, h, ok, eq }) => {
 ```
 
 `h` trae ayudas: `start`, `pick`, `addPlan`, `stockFor`, `exploreAdd`, `search`, `scan`, `ticketFromList`, `chatSay`, `S` (leer el estado)…
+
+## Qué cubren las pruebas «duras» (t12, t13, t14)
+- **Contrato con la IA** (`lib.js · contractErrors`): el simulador rechaza con error 400 lo que la API real rechazaría (p. ej. `tool_choice` forzado, herramientas mal definidas, imagen no válida) y simula el tope de respuesta del servidor. Si la app pide algo que fallaría en el móvil, la prueba falla.
+- **Tickets reales** (t13): comida que no está en el catálogo (g, ml, piezas, sin tamaño), nombres en mayúsculas/plural/tildes, el mismo producto en varias líneas y tickets, sinónimos de Hogar, descuentos negativos, cantidades con decimales, ticket de 40 líneas y 25 tickets generados al azar (semilla fija) con comprobación de cuentas.
+- **Nombres y IA** (t14): la IA crea o nombra productos con otra grafía; no debe haber duplicados.
+- **Invariantes globales** (todas las pruebas): sin productos duplicados en comida ni en casa, sin textos raros, sin stock inválido, historial cuadrado con los tickets.
+- Regla: todo error que aparezca en el móvil se añade aquí **con el caso exacto que lo produjo** antes de darlo por corregido.

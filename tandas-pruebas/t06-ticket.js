@@ -20,7 +20,7 @@ T('Ticket · el precio real del ticket actualiza el precio del producto', async 
   await h.scan(tk); await p.click('#rv-save'); await p.waitForTimeout(150); ok(h.approx(await h.S(n => S.P[n].p, n), l.importe / l.uds, 0.02), 'el precio del producto se actualiza'); ok(await h.S(n => S.P[n].t === 1, n), 'marcado como precio real');
 });
 T('Ticket · línea sin producto pide revisión; elegir producto la deja lista', async ({ p, h, ok, eq }) => {
-  await h.start(); await base(h); const tk = await h.ticketFromList(); tk.lineas[0].producto = null; await h.scan(tk);
+  await h.start(); await base(h); const tk = await h.ticketFromList(); tk.lineas[0].producto = null; tk.lineas[0].desc = '###'; await h.scan(tk);
   eq(await p.locator('#scan-in .rv-attn').count(), 1, 'una línea pide revisión'); ok(/Hay 1 línea que conviene revisar/.test(await p.locator('#scan-in').innerText()), 'lo dice arriba');
   const real = (await h.ticketFromList()).lineas[0].desc; const prod = await h.S(() => shop(S.plan).rows.find(x => x.packs).n); await p.locator('#scan-in .rv-attn select[data-f=producto]').selectOption(prod); await p.waitForTimeout(100);
   eq(await p.locator('#scan-in .rv-attn').count(), 0, 'ya no pide revisión'); ok(await p.locator('#scan-in .rv-mini').count() >= 1, 'pasa a compacta');

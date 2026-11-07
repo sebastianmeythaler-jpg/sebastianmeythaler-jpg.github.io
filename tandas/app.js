@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.4 · 7 nov';
+const VERSION = '2.9.5 · 7 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -57,6 +57,9 @@ function sameName(a, b, loose) {
   return [...big].filter(x => !small.has(x)).every(x => NEUTRAL.has(x));
 }
 const findName = (name, keys, loose) => keys.find(k => k.toLowerCase() === String(name).toLowerCase()) || keys.find(k => sameName(k, name, loose));
+const sentence = t => { t = String(t || '').trim(); if (t === t.toUpperCase()) t = t.toLowerCase(); return t.replace(/^./, c => c.toUpperCase()); };
+// «QUESO FRESCO BATIDO 0% 250G» → «Queso fresco batido»
+const cleanDesc = d => String(d || '').replace(/\d+([.,]\d+)?\s*(%|kg|g|gr|ml|cl|l|ud|uds|x)?\b/gi, ' ').replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 function mergeHogarDups(s) {
   const ks = Object.keys(s.HP || {}); const seedHP = new Set(Object.keys((window.SEED && window.SEED.HP) || {}));
   for (const a of ks) { if (!s.HP[a]) continue;
@@ -1082,7 +1085,7 @@ Reglas:
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
     RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; let nn = null;
-      if (!sn && !S.P[l.producto] && l.tipo !== 'Hogar' && l.tipo !== 'Extra') { const nm = String(l.nombre_nuevo || l.nombre_comun || '').trim().replace(/^./, c => c.toUpperCase()); if (nm) { const same = findName(nm, Object.keys(S.P), false); const u = ['g', 'ml', 'ud'].includes(l.unidad_nueva) ? l.unidad_nueva : 'ud'; if (same) nn = { ex: same }; else nn = { name: nm, u, q: Number(l.cantidad_envase) > 0 ? Number(l.cantidad_envase) : 1, cat: l.categoria_nueva || '' }; } }
+      if (!sn && !S.P[l.producto] && l.tipo !== 'Hogar' && l.tipo !== 'Extra') { const nm = sentence(l.nombre_nuevo || l.nombre_comun || cleanDesc(l.desc)); if (nm) { const same = findName(nm, Object.keys(S.P), false); let u = ['g', 'ml', 'ud'].includes(l.unidad_nueva) ? l.unidad_nueva : 'ud'; if (u !== 'ud' && !(Number(l.cantidad_envase) > 0)) u = 'ud'; if (same) nn = { ex: same }; else nn = { name: nm, u, q: Number(l.cantidad_envase) > 0 ? Number(l.cantidad_envase) : 1, cat: l.categoria_nueva || '' }; } }
       const hp = l.tipo === 'Hogar' ? (findName(l.producto_hogar || l.desc, Object.keys(S.HP), true) || '') : '';
       return { nn: nn && nn.name ? nn : null, es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : nn && nn.ex ? nn.ex : nn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : nn && nn.ex ? (Number(l.uds) || 1) * (S.P[nn.ex].q || 1) : nn && nn.name ? (Number(l.uds) || 1) * nn.q : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: hp || l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
     renderReview();
@@ -1136,12 +1139,13 @@ function saveReview() {
     }
     let prod = l.producto || null;
     if (prod === '__new' && l.nn) {
-      prod = l.nn.name; const u = l.nn.u, q = l.nn.q;
+      prod = findName(l.nn.name, Object.keys(S.P), false) || l.nn.name; const u = l.nn.u, q = l.nn.q;
+      if (S.P[prod] && l.nn.name !== prod) l.inv = Number(l.inv) / q * (S.P[prod].q || 1) || (Number(l.uds) || 1) * (S.P[prod].q || 1);
       if (!S.P[prod]) { S.P[prod] = { f: u === 'ud' && q === 1 ? 'Unidad' : `${q} ${u}`, p: r2((Number(l.importe) || 0) / Math.max(1, (Number(l.inv) || 0) / q || Number(l.uds) || 1)), q, u, t: 1 }; const cat = S.CATS.find(c => c.name.toLowerCase() === String(l.nn.cat).toLowerCase()) || S.CATS.find(c => c.name === 'Otros') || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
       l.inv = Number(l.inv) || (Number(l.uds) || 1) * q;
     }
     else if (prod === '__new') {
-      prod = l.desc.trim().toLowerCase().replace(/^./, c => c.toUpperCase());
+      prod = sentence(l.desc); prod = findName(prod, Object.keys(S.P), false) || prod;
       if (!S.P[prod]) { S.P[prod] = { f: 'Unidad', p: r2((l.importe || 0) / (l.uds || 1)), q: 1, u: 'ud', t: 1 }; if (l.es_snack) S.P[prod].snack = 1; const cat = (l.es_snack && S.CATS.find(c => c.name === 'Dulces y snacks')) || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
       l.inv = l.inv || l.uds || 1;
     }
@@ -1215,6 +1219,10 @@ const AI_TOOLS = [
 ];
 function runTool(name, x) {
   const findR = id => byId(id) || S.R.find(r => r.n.toLowerCase() === String(id).toLowerCase());
+  // La IA puede escribir el nombre con otra grafía (mayúsculas, plural, tildes): se resuelve al producto que ya existe
+  { const fix = n => (n && !S.P[n] ? findName(n, Object.keys(S.P), false) || n : n);
+    if (x && x.producto) x.producto = fix(x.producto); if (x && Array.isArray(x.ingredientes)) for (const g of x.ingredientes) if (g && g.producto) g.producto = fix(g.producto);
+    if (name === 'crear_producto' && x && x.nombre) { const ex = findName(x.nombre, Object.keys(S.P), false); if (ex) return `Ya existe "${ex}".`; } }
   if (name === 'ajustar_despensa') {
     const p = S.P[x.producto]; if (!p) return `Error: "${x.producto}" no está en el catálogo.`;
     const cur = S.stock[x.producto] || 0; const v = x.modo === 'sumar' ? cur + x.cantidad : x.modo === 'restar' ? cur - x.cantidad : x.cantidad;
