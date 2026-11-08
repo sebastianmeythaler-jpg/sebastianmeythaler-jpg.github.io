@@ -1,5 +1,7 @@
 const { T } = require('./lib');
-const seedTickets = (h, list) => h.S(l => { for (const t of l) S.tickets.push({ id: 't' + Math.random(), fecha: t.f, tienda: t.s || 'Super', total: t.total, lineas: [{ desc: 'x', producto: null, inv: 0, uds: 1, importe: t.total, tipo: t.tipo || 'Extra', grupo: 'Otros' }] }); S.nivel = 4; save(); render(); }, list);
+const seedTickets = async (h, list) => { await h.S(l => { for (const t of l) S.tickets.push({ id: 't' + Math.random(), fecha: t.f, tienda: t.s || 'Super', total: t.total, lineas: [{ desc: 'x', producto: null, inv: 0, uds: 1, importe: t.total, tipo: t.tipo || 'Extra', grupo: 'Otros' }] }); S.nivel = 4; save(); render(); }, list);
+  // El aviso de fin de mes sale 1,2 s después de abrir la app; se espera y se cierra para que no tape los clics de la prueba
+  await h.S(async () => { await new Promise(r => setTimeout(r, 1400)); const d = document.querySelector('#dlg-pop'); if (d && d.open) { window.__popVisto = true; d.close(); } }); };
 const day = (d, h = 10) => new Date(`${d}T${String(h).padStart(2, '0')}:00:00+01:00`);
 
 T('Historial · aparece con los meses, el total de cada uno y «en curso»', async ({ p, h, ok, eq }) => {

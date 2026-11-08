@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.5 · 7 nov';
+const VERSION = '2.9.6 · 8 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -1204,6 +1204,7 @@ for (const id of ['#file-cam', '#file-gal']) $(id).addEventListener('change', ev
 const AI_TOOLS = [
   { name: 'ajustar_despensa', description: 'Cambia la cantidad de un producto de la despensa por compras, correcciones o cosas que se tiraron. NO es para lo que se comió: para eso usa anotar_consumo.', input_schema: { type: 'object', required: ['producto', 'cantidad', 'modo'], properties: { motivo: { type: 'string', enum: ['compra', 'correccion', 'tirado', 'comido'], description: 'Por qué cambia. Si es comido, se anota también como comida con su coste' }, producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto (g, ml o ud)' }, modo: { type: 'string', enum: ['sumar', 'restar', 'fijar'] } } } },
   { name: 'crear_producto', description: 'Crea un producto nuevo en el catálogo.', input_schema: { type: 'object', required: ['nombre', 'unidad', 'formato', 'precio', 'cantidad_formato', 'categoria'], properties: { nombre: { type: 'string' }, unidad: { type: 'string', enum: ['g', 'ml', 'ud'] }, formato: { type: 'string', description: 'Ej.: Paquete 500 g' }, precio: { type: 'number', description: 'Precio del formato en la moneda del usuario' }, cantidad_formato: { type: 'number' }, categoria: { type: 'string', enum: NEWCATS.map(c => c[0]) }, consumible: { type: 'boolean', description: 'true para especias, sazonadores y condimentos secos: se cuentan por botes y no se descuentan al cocinar' }, cantidad_en_casa: { type: 'number', description: 'En la unidad del producto; si es consumible, número de botes' } } } },
+  { name: 'editar_producto', description: 'Corrige datos de un producto que ya está en el catálogo: cuánto trae cada paquete o bolsa, su formato o su precio (p. ej. «la bolsa de queso rallado es de 400 g, no de 270», «ahora cuesta 2,10»). No cambia lo que hay en la despensa.', input_schema: { type: 'object', required: ['producto'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad_formato: { type: 'number', description: 'Lo que trae cada paquete/bolsa/lata, en la unidad del producto (g, ml o ud)' }, formato: { type: 'string', description: 'Texto del formato, p. ej. Bolsa 400 g' }, precio: { type: 'number', description: 'Precio de un paquete en la moneda del usuario' } } } },
   { name: 'ajustar_hogar', description: 'Cambia la cantidad de un producto de casa (aseo personal, limpieza, cocina y hogar). Lo crea si no existe. Úsalo para todo lo que no es comida.', input_schema: { type: 'object', required: ['producto', 'cantidad', 'modo'], properties: { producto: { type: 'string', description: 'Nombre corto y genérico, p. ej. Champú' }, cantidad: { type: 'integer', description: 'Unidades' }, modo: { type: 'string', enum: ['sumar', 'restar', 'fijar', 'a_la_lista'] }, categoria: { type: 'string', enum: HCATS } } } },
   { name: 'recordar_habito', description: 'Guarda una nota corta y estable sobre los hábitos, gustos o rutina de consumo del usuario, para recordarla aunque se borre el chat.', input_schema: { type: 'object', required: ['nota'], properties: { nota: { type: 'string', description: 'Una frase corta, p. ej. "Suele cenar 2 fajas de pavo"' } } } },
   { name: 'anotar_snack', description: 'Anota un snack o picoteo entre horas hecho con un producto de la despensa y lo descuenta.', input_schema: { type: 'object', required: ['producto', 'cantidad'], properties: { producto: { type: 'string', description: 'Nombre exacto del catálogo' }, cantidad: { type: 'number', description: 'En la unidad del producto' } } } },
@@ -1230,6 +1231,17 @@ function runTool(name, x) {
     if (v > 1e-6) S.stock[x.producto] = r2(v); else delete S.stock[x.producto];
     if (x.motivo === 'comido' && v < cur) { const c = r2((cur - Math.max(0, v)) * ucost(p)); logMeal(mealByHour(), `${x.producto} (${fmtQ(cur - Math.max(0, v), p.u)})`, c); return `OK. ${x.producto}: ${fmtQ(Math.max(0, v), p.u)} en casa; anotado como comido (${eur(c)}).`; }
     return `OK. ${x.producto}: ${fmtQ(Math.max(0, v), p.u)} en casa.`;
+  }
+  if (name === 'editar_producto') {
+    const p = S.P[x.producto]; if (!p) return `Error: "${x.producto}" no está en el catálogo.`;
+    const q = x.cantidad_formato, pr = x.precio; if (q === undefined && pr === undefined && !x.formato) return 'Error: dime qué cambio (cantidad por paquete, formato o precio).';
+    if (q !== undefined && !(Number(q) > 0)) return 'Error: la cantidad por paquete debe ser mayor que 0.'; if (pr !== undefined && !(Number(pr) >= 0)) return 'Error: precio no válido.';
+    const u = p.c ? (p.gu || 'g') : p.u; const old = p.c ? p.g : p.q;
+    if (q !== undefined) { if (p.c) p.g = Number(q); else p.q = Number(q); }
+    if (pr !== undefined) p.p = r2(Number(pr));
+    const nq = p.c ? p.g : p.q;
+    if (x.formato) p.f = String(x.formato).slice(0, 40); else if (q !== undefined) p.f = /\d/.test(p.f || '') ? String(p.f).replace(/\d+([.,]\d+)?\s*(kg|g|ml|l|ud|uds)\b/i, `${nq} ${u}`) : `Paquete ${nq} ${u}`;
+    return `OK. ${x.producto}: ${q !== undefined ? `cada paquete trae ${fmtQ(nq, u)} (antes ${fmtQ(old, u)}); ` : ''}formato «${p.f}», precio ${eur(p.p)}. La despensa no cambia (${fmtQ(S.stock[x.producto] || 0, p.u)}).`;
   }
   if (name === 'crear_producto') {
     if (S.P[x.nombre]) return `Ya existe "${x.nombre}".`;
@@ -1317,7 +1329,11 @@ Precisión (muy importante):
 - Antes de tocar nada, identifica cada producto del catálogo, la cantidad y la operación. "Usé / puse / gasté X" para comérselo = anotar_consumo (resta y suma el coste a lo que come); si no se lo comió (lo tiró, se estropeó) = ajustar_despensa restar. "Compré / me han dado X" = sumar X. "Me queda / tengo / hay X" = fijar X. "Me comí N de una receta" = anotar_comida (no restes además sus ingredientes). "Cociné la tanda" = marcar_cocinado.
 - Si dice qué le puso a un plato que se comió (p. ej. "en la faja puse 60 g de champiñones y mostaza"), anótalo con anotar_consumo (descripción "Extra en la faja", la misma comida) para que se reste y su coste cuente.
 - Conversiones: 1 kg = 1000 g; 1 L = 1000 ml; cucharada ≈ 15 g o ml; cucharadita ≈ 5; chorrito ≈ 10 ml; "un poco" de salsa ≈ 10 g; loncha de fiambre ≈ 15 g; loncha de queso = 1 ud; puñado ≈ 30 g; huevo = 1 ud. Usa la unidad del producto en el catálogo.
-- Si no encuentras el producto en el catálogo o hay dos que encajan igual, pregunta en una frase corta cuál es, en vez de adivinar. Si solo falta la cantidad, usa la conversión razonable y dila.
+- Si no encuentras el producto pero hay UNO claramente equivalente (fideos, espaguetis, macarrones = la pasta que tenga; pechuga = pollo; carne picada = la picada que tenga), úsalo y dilo de pasada, sin preguntar. Pregunta solo si hay dos o más candidatos igual de buenos o ninguno, y hazlo UNA sola vez, con todas las dudas juntas en una frase.
+- Si solo falta la cantidad, usa la conversión razonable y dila.
+- La despensa es la referencia: si dice haber usado más de lo que consta (p. ej. 400 g de queso y constan 270 g), NO lo inventes ni lo des por bueno: avísale en una frase con las dos cifras y pregúntale si usas lo que consta o si lo corriges (con todas las dudas del mensaje juntas). Solo si confirma que de verdad había más, corrige con ajustar_despensa (motivo correccion, sumando la diferencia) y sigue. Lo que no está en la despensa no cuenta en lo que come. Si dice «usé todo» o «usé una bolsa entera», la cantidad es todo lo que consta o el tamaño de la bolsa del catálogo.
+- Si dice que ya usó los ingredientes para cocinar platos ("usé… para sacar 6 platos", "cociné…"), eso es pasado: crea la receta con sus cantidades exactas (raciones = los platos que salieron), añádela con anadir_a_semana y descuenta la despensa con marcar_cocinado, en ese orden. Si solo pide «añade/prepara/planifica…» sin haberlo cocinado, solo anadir_a_semana.
+- Si un dato del catálogo está mal (lo que trae una bolsa o paquete, el precio, el formato), corrígelo tú con editar_producto en vez de decir que no puedes. Lo que sí no puedes es renombrar ni borrar productos: en ese caso dile dónde hacerlo (Despensa).
 - Al confirmar, da las cifras finales que devuelven las herramientas (cuánto queda), no las calcules tú.
 - Si te pide algo que no puedes hacer con tus herramientas, dilo claro en una frase.
 Lo que sabes de sus hábitos (guárdalo en cuenta para sugerencias y para entenderle): ${habitStats()}${(S.habits || []).length ? '\nNotas que has guardado sobre él: ' + S.habits.map(h => h.t).join(' | ') : ''}
