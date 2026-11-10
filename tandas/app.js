@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.6 · 8 nov';
+const VERSION = '2.9.7 · 11 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -981,6 +981,9 @@ $('#file-backup').addEventListener('change', async ev => {
 });
 
 /* ---------- IA: llamada a la API ---------- */
+// Los modelos 5.x «piensan» antes de responder si no se les dice lo contrario: gasta miles de tokens de salida (se cobran como salida) y, en Haiku, se comía todo el margen y el ticket llegaba cortado.
+// Se apaga el pensamiento: Haiku admite «disabled»; Sonnet pide «between_tools» (no piensa antes de responder).
+function withNoThinking(b) { const m = String(b.model || ''); const t = /haiku/.test(m) ? { type: 'disabled' } : /sonnet|opus/.test(m) ? { type: 'between_tools' } : null; return t ? { ...b, thinking: t } : b; }
 async function claude(body) {
   if (!aiReady()) throw new Error(PROXY ? 'Falta tu código de invitación. Añádelo en Ajustes.' : 'Falta la clave de API. Añádela en Ajustes.');
   // Este modelo no admite tool_choice «tool»/«any»: se pide con «auto» y se le indica en el mensaje qué herramienta usar.
@@ -995,7 +998,7 @@ async function claude(body) {
     res = await fetch(direct ? 'https://api.anthropic.com/v1/messages' : PROXY + 'ia', {
       method: 'POST',
       headers: direct ? { 'content-type': 'application/json', 'x-api-key': S.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } : { 'content-type': 'application/json', 'x-tandas-code': S.code },
-      body: JSON.stringify({ model: S.model, max_tokens: 2000, ...body })
+      body: JSON.stringify(withNoThinking({ model: S.model, max_tokens: 2000, ...body }))
     });
   } catch (e) { throw new Error('Sin conexión con la IA. Revisa tu internet.'); }
   const data = await res.json().catch(() => ({}));

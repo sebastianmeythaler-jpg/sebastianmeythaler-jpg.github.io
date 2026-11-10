@@ -55,3 +55,5 @@ T('Zona · lo que debe pasar', async ({ p, h, ok, eq }) => {
 - **Nombres y IA** (t14): la IA crea o nombra productos con otra grafía; no debe haber duplicados.
 - **Invariantes globales** (todas las pruebas): sin productos duplicados en comida ni en casa, sin textos raros, sin stock inválido, historial cuadrado con los tickets.
 - Regla: todo error que aparezca en el móvil se añade aquí **con el caso exacto que lo produjo** antes de darlo por corregido.
+
+- `t16-pensamiento.js`: comprueba que cada llamada a la IA (directa o por el Worker) lleva el pensamiento apagado según el modelo (Haiku «disabled», Sonnet «between_tools») y que un ticket de 40 líneas cabe en 6.000 tokens.

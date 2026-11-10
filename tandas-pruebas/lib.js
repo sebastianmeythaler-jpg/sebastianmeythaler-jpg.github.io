@@ -21,7 +21,7 @@ async function newEnv(browser, opts = {}) {
     if (env.offline) return r.abort('internetdisconnected');
     const body = JSON.parse(r.request().postData() || '{}'); env.aiCalls.push(body);
     { const bad = contractErrors(body, env); if (bad) { env.contract.push(bad); return r.fulfill({ status: 400, json: { type: 'error', error: { type: 'invalid_request_error', message: bad } } }); } }
-    if (body.tools && body.tools.length === 1 && body.tools[0].name === 'registrar_ticket' && !env.truncate) { const n = ((env.nextTicket || {}).lineas || []).length; if (n * 85 + 150 > Math.min(body.max_tokens || 1000, env.workerCap)) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: {} }] } }); }
+    if (body.tools && body.tools.length === 1 && body.tools[0].name === 'registrar_ticket' && !env.truncate) { const n = ((env.nextTicket || {}).lineas || []).length; if (n * (/haiku/.test(body.model) ? 170 : 120) + 150 > Math.min(body.max_tokens || 1000, env.workerCap)) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: {} }] } }); }
     if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) return r.fulfill({ status: 400, json: { type: 'error', error: { type: 'invalid_request_error', message: 'tool_choice:type "tool" and "any" are not supported for this model.' } } });
     if (!body.tool_choice || body.tool_choice.type === 'auto') { const one = body.tools && body.tools.length === 1 ? body.tools[0].name : null; if (one) body.tool_choice = { type: 'auto', name: one }; }
     if (body.tool_choice && body.tool_choice.name === 'registrar_ticket' && env.truncate) return r.fulfill({ json: { stop_reason: 'max_tokens', content: [{ type: 'tool_use', id: 'x', name: 'registrar_ticket', input: { tienda: 'X', lineas: [] } }] } });
@@ -75,6 +75,12 @@ function helpers(env) {
 function contractErrors(body, env) {
   if (!body.model) return 'falta model'; if (!(body.max_tokens > 0)) return 'falta max_tokens'; if (!Array.isArray(body.messages) || !body.messages.length) return 'messages vacío';
   if (body.messages[body.messages.length - 1].role !== 'user') return 'el último mensaje debe ser del usuario';
+  { // medido contra la API real (nov 2026): sin «thinking» los modelos 5.x piensan y gastan miles de tokens; Haiku solo admite «disabled» y Sonnet solo «between_tools»
+    const hk = /haiku/.test(body.model), th = body.thinking && body.thinking.type;
+    if (!th) return 'falta apagar el pensamiento (thinking): gasta tokens de salida de más y en Haiku corta los tickets';
+    if (hk && th !== 'disabled') return '"thinking.type.' + th + '" is not supported for this model.';
+    if (!hk && th !== 'between_tools') return 'To turn thinking off on this model, send "thinking": {"type": "between_tools"} instead of {"type": "' + th + '"}.';
+  }
   if (body.tool_choice && (body.tool_choice.type === 'tool' || body.tool_choice.type === 'any')) return 'tool_choice:type "tool" and "any" are not supported for this model.';
   for (const m of body.messages) for (const c of Array.isArray(m.content) ? m.content : []) {
     if (c.type === 'image') { const d = c.source && c.source.data || ''; if (c.source.media_type !== 'image/jpeg' || !/^[A-Za-z0-9+/=]+$/.test(d) || d.length > 6.5e6) return 'imagen no válida'; }

@@ -16,7 +16,7 @@ const ORIGEN = 'https://sebastianmeythaler-jpg.github.io';
 const CONTACTO = 'https://sebastianmeythaler-jpg.github.io/tandas/';
 const LIMITE_DIARIO = 60;
 const MODELOS = ['claude-haiku-5-5', 'claude-sonnet-5-5'];
-const MAX_TOKENS = 2000;
+const MAX_TOKENS = 6000; // un ticket largo necesita 2.000-4.000 tokens de salida; con 2.000 se cortaba
 const VENTANA_MIN = 180; // si el móvil estaba apagado, el aviso aún se manda hasta 3 h después
 const AVISOS = {
   desayuno: 'No te olvides de la comida más importante del día, prepárate tu desayuno',
@@ -174,6 +174,8 @@ export default {
     if (env.USO) { usadas = Number(await env.USO.get(clave)) || 0; if (usadas >= LIMITE_DIARIO) return error(429, 'limite', 'Límite diario alcanzado.'); }
     if (!MODELOS.includes(body.model)) body.model = MODELOS[0];
     body.max_tokens = Math.min(Number(body.max_tokens) || 1000, MAX_TOKENS);
+    // Pensamiento apagado siempre (lo fija el servidor para que también valga con versiones antiguas de la app): Haiku «disabled», Sonnet «between_tools».
+    body.thinking = body.model === 'claude-haiku-5-5' ? { type: 'disabled' } : { type: 'between_tools' };
     delete body.stream; body.metadata = { user_id: 'tandas-' + quien };
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
     if (env.USO && r.ok) await env.USO.put(clave, String(usadas + 1), { expirationTtl: 60 * 60 * 48 });
