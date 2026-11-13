@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.9.7 · 11 nov';
+const VERSION = '2.10 · 13 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -173,6 +173,7 @@ function load() {
   if (needModel) { s.model = 'claude-sonnet-5-5'; s.modelV = 1; }
   s.habits = s.habits || [];
   if (!s.hdupV) { mergeHogarDups(s); s.hdupV = 1; }
+  for (const x of s.log || []) { if (!isFinite(x.c)) x.c = 0; if (!x.n) x.n = x.t === 'snack' ? 'Snack' : 'Comida'; }
   return s;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); if (S.remind && S.remind.on) mirrorState(); } catch (e) { toast('No se pudo guardar en este dispositivo'); } }
@@ -389,11 +390,43 @@ function renderDetails(si, pend) {
   ${monthsPanel()}
   <section class="panel" aria-label="Tickets de la semana">
     <h3>Tickets de ${cicloTxt()[1]}</h3>
-    ${si.tk.length ? si.tk.map(t => `<div class="tk"><span>${new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${esc(t.tienda)}</span><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
+    ${si.tk.length ? si.tk.map(t => ticketRow(t, 'per')).join('') : '<p class="small muted" style="margin:0">Aún no hay tickets esta semana. Usa el botón central para escanear uno.</p>'}
   </section>
+  ${ticketsArchive()}
   ${newCyclePanel()}`;
 }
 
+/* ---------- Detalle de cada ticket ---------- */
+function lineDest(l) {
+  if (l.tipo === 'Hogar') return `Casa: ${esc(l.hogar || l.desc)}`;
+  if (l.producto) return `${l.tipo === 'Extra' ? 'Capricho' : 'A la despensa'}: ${esc(l.producto)}${l.inv ? ` (+${fmtQ(l.inv, S.P[l.producto] ? S.P[l.producto].u : 'ud')})` : ''}`;
+  return l.tipo === 'Extra' ? `Capricho${l.grupo ? ' · ' + esc(l.grupo) : ''}, no entra a la despensa` : 'Solo gasto, no entra a la despensa';
+}
+function ticketRow(t, sc = 'per') {
+  const open = TK_OPEN === sc + ':' + t.id, d = new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  const head = `<div class="tk"><button type="button" class="link tk-open" data-act="tk-open" data-sc="${sc}" data-id="${t.id}" aria-expanded="${open}">${open ? '▾' : '▸'} ${d}${t.hora ? ' ' + esc(t.hora) : ''} · ${esc(t.tienda)}</button><span class="num">${t.est ? '≈ ' : ''}${eur(t.total)} <button type="button" class="link" data-act="del-ticket" data-id="${t.id}" aria-label="Borrar ticket">✕</button></span></div>`;
+  if (!open) return head;
+  const full = new Date(t.fecha + 'T12:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const iva = (t.iva || []).length ? `<table class="tk-iva"><tr><th>IVA</th><th>Base</th><th>Cuota</th></tr>${t.iva.map(r => `<tr><td>${r.tipo}%</td><td>${eur(r.base)}</td><td>${eur(r.cuota)}</td></tr>`).join('')}</table>` : '';
+  const lines = (t.lineas || []).map((l, i) => {
+    const fixable = l.tipo !== 'Hogar' && !l.producto && !t.est && t.tienda !== 'Fuera de casa';
+    const form = TK_FIX === `${sc}:${t.id}:${i}` ? fixForm(l) : '';
+    return `<div class="tkl"><div class="tkl-h"><span>${esc(l.desc)}${l.uds > 1 ? ` <span class="muted">× ${l.uds}${l.pu ? ' a ' + eur(l.pu) : ''}</span>` : ''}</span><span class="num">${eur(l.importe)}</span></div><div class="small muted">${lineDest(l)}${fixable && !form ? ` · <button type="button" class="link" data-act="tk-fix" data-sc="${sc}" data-id="${t.id}" data-i="${i}">Añadir a la despensa</button>` : ''}</div>${form}</div>`;
+  }).join('');
+  const falta = !t.factura && !(t.iva || []).length && !t.hora;
+  return head + `<div class="tk-det receipt"><div class="rc-h"><b>${esc(t.tienda)}</b>${t.direccion ? `<br>${esc(t.direccion)}` : ''}<br>${esc(full)}${t.hora ? ', ' + esc(t.hora) : ''}${t.factura ? `<br>Factura ${esc(t.factura)}` : ''}</div>${lines}<div class="rc-total"><span>TOTAL</span><span class="num">${eur(t.total)}</span></div>${t.pago ? `<div class="small muted">Pagado con ${t.pago}</div>` : ''}${iva}${falta ? '<div class="small muted">Sin hora, número de factura ni IVA guardados.</div>' : ''}${aiReady() && !t.est && t.tienda !== 'Fuera de casa' ? `<button type="button" class="link" data-act="tk-complete" data-id="${t.id}">${falta ? 'Completar' : 'Volver a leer'} los datos de la factura con una foto</button>` : ''}</div>`;
+}
+// Archivo de todos los tickets, por meses
+function ticketsArchive() {
+  const all = (S.tickets || []).slice().sort((a, b) => tkTs(b) - tkTs(a)); if (all.length < 1) return '';
+  const groups = []; for (const t of all) { const k = t.fecha.slice(0, 7); let g = groups.find(x => x.k === k); if (!g) { g = { k, t: [], sum: 0 }; groups.push(g); } g.t.push(t); g.sum += t.total; }
+  const mn = k => { const [y, m] = k.split('-'); return ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][Number(m) - 1] + ' ' + y; };
+  return `<section class="panel" aria-label="Todos mis tickets"><details class="tkall" ${S.tkAllOpen ? 'open' : ''}><summary><h3 style="margin:0">Todos mis tickets</h3><span class="small muted">${all.length}</span></summary>${groups.map(g => `<div class="small muted tk-mes"><b>${mn(g.k)}</b> · ${eur(r2(g.sum))}</div>${g.t.map(t => ticketRow(t, 'all')).join('')}`).join('')}</details></section>`;
+}
+function fixForm(l) {
+  const nm = sentence(cleanDesc(l.desc)) || '';
+  return `<div class="tkf"><label class="field">Nombre del producto<input id="tkf-name" value="${esc(nm)}"></label><div class="grid2"><label class="field">Se mide en<select id="tkf-u"><option value="g">gramos</option><option value="ml">mililitros</option><option value="ud">unidades</option></select></label><label class="field">Cuánto trae cada uno<input id="tkf-q" type="number" min="1" step="any" inputmode="decimal" placeholder="Ej.: 500"></label></div><label class="field">Categoría<select id="tkf-cat">${NEWCATS.map(c => `<option>${esc(c[0])}</option>`).join('')}</select></label><div class="add-row"><button type="button" class="btn small" data-act="tk-fix-save">Guardar en la despensa</button><button type="button" class="link" data-act="tk-fix-cancel">Cancelar</button></div></div>`;
+}
 /* ---------- Historial por periodos (de compra a compra) ---------- */
 const CICLO_DIAS = { semana: 9, quincena: 18, mes: 35 };
 const cycDays = (a, b) => Math.max(1, Math.ceil((b - a) / 864e5));
@@ -865,6 +898,15 @@ document.addEventListener('click', ev => {
     const q = m === 'suelto' ? Number($('#inv-qty').value) || 0 : r2(cnt * each);
     if (m !== 'suelto' && Number($('#inv-each').value) > 0 && S.P[n] && !S.P[n].c && !S.P[n].t) { const p = S.P[n]; p.p = r2(p.p / p.q * each); p.q = each; } if (!S.P[n] || q <= 0) return toast('Indica una cantidad mayor que 0'); S.stock[n] = r2((S.stock[n] || 0) + q); if (isC(n)) { S.since[n] = Date.now(); delete S.want[n]; delete S.snz[n]; } S.invSel = n; toast(`Añadido: ${m === 'suelto' ? '' : cnt + ' ' + envLabel(m, cnt) + ' · '}${fmtQ(q, S.P[n].u)} de ${n}`); }
   else if (a === 'new-cycle') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = `¿Seguro? Pulsa otra vez para empezar ${cicloTxt()[0] === 'mes' ? 'un nuevo mes' : 'una nueva ' + cicloTxt()[0]}`; return; } newCycle(Date.now() + 1); toast('Contadores a cero. Lo anterior sigue guardado en «Tus compras anteriores»'); }
+  else if (a === 'tk-open') { const k = b.dataset.sc + ':' + b.dataset.id; TK_OPEN = TK_OPEN === k ? null : k; TK_FIX = null; }
+  else if (a === 'tk-complete') { completeTicket(b.dataset.id); return; }
+  else if (a === 'tk-fix') { TK_FIX = `${b.dataset.sc}:${b.dataset.id}:${b.dataset.i}`; }
+  else if (a === 'tk-fix-cancel') { TK_FIX = null; }
+  else if (a === 'tk-fix-save') { const [, id, i] = String(TK_FIX).split(':'); const t = S.tickets.find(q => q.id === id), l = t && t.lineas[Number(i)]; if (!l) return;
+    const nm = sentence($('#tkf-name').value); const u = $('#tkf-u').value; let q = Number($('#tkf-q').value) || 0; if (!nm) return toast('Escribe el nombre del producto'); if (u !== 'ud' && q <= 0) return toast('Indica cuánto trae cada uno, por ejemplo 500');
+    if (u === 'ud' && q <= 0) q = 1; const ex = findName(nm, Object.keys(S.P), false); const prod = ex || nm; const uds = Number(l.uds) || 1;
+    if (!ex) { S.P[prod] = { f: u === 'ud' && q === 1 ? 'Unidad' : `${q} ${u}`, p: r2((Number(l.importe) || 0) / uds), q, u, t: 1 }; const cat = S.CATS.find(c => c.name === $('#tkf-cat').value) || S.CATS[S.CATS.length - 1]; cat.items.push(prod); }
+    const inv = uds * (S.P[prod].q || q); S.stock[prod] = r2((S.stock[prod] || 0) + inv); l.producto = prod; l.inv = inv; l.tipo = 'De la lista'; l.grupo = null; S.alias[String(l.desc).toUpperCase()] = prod; TK_FIX = null; toast(`${prod}: ${fmtQ(inv, S.P[prod].u)} añadidos a la despensa`); }
   else if (a === 'del-ticket') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Borrar?'; return; } const tk = S.tickets.find(t => t.id === b.dataset.id); let undone = 0;
     for (const l of (tk && tk.lineas) || []) {
       if (l.producto && l.inv > 0 && S.P[l.producto]) { const v = (S.stock[l.producto] || 0) - l.inv; if (v > 1e-6) S.stock[l.producto] = r2(v); else delete S.stock[l.producto]; undone++; }
@@ -892,6 +934,7 @@ document.addEventListener('change', ev => {
   render();
 });
 document.addEventListener('toggle', ev => {
+  if (ev.target.classList && ev.target.classList.contains('tkall')) { S.tkAllOpen = ev.target.open; save(); return; }
   if (ev.target.classList && ev.target.classList.contains('cyc')) { S.cyclesOpen = ev.target.open; save(); return; }
   if (ev.target.classList && ev.target.classList.contains('months')) { S.monthsOpen = ev.target.open; save(); return; }
   const g = ev.target; if (g.dataset && g.dataset.group) { const set = new Set(S.openGroups || []); const was = set.has(g.dataset.group); g.open ? set.add(g.dataset.group) : set.delete(g.dataset.group); S.openGroups = [...set]; save(); if (g.open && !was && !g.querySelector('article')) renderRecetas(); return; }
@@ -1036,6 +1079,14 @@ async function fileToJpeg(file) {
   const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
+let TK_COMPLETE = null, TK_OPEN = null, TK_FIX = null;
+// Datos de la factura que no son líneas: hora, número, dirección, forma de pago e IVA (nunca el número de tarjeta)
+function metaFrom(x) {
+  const m = {}; const h = String(x.hora || '').match(/\d{1,2}:\d{2}/); if (h) m.hora = h[0]; if (x.num_factura) m.factura = String(x.num_factura).slice(0, 40); if (x.direccion) m.direccion = String(x.direccion).slice(0, 80);
+  if (['tarjeta', 'efectivo', 'otro'].includes(x.metodo_pago)) m.pago = x.metodo_pago;
+  const iva = (x.iva || []).map(r => ({ tipo: Number(r.tipo) || 0, base: r2(Number(r.base) || 0), cuota: r2(Number(r.cuota) || 0) })).filter(r => r.base || r.cuota); if (iva.length) m.iva = iva; return m;
+}
+function completeTicket(id) { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = () => { if (inp.files[0]) { TK_COMPLETE = id; $('#dlg-scan').showModal(); readTicket(inp.files[0]); } }; inp.click(); }
 async function readTicket(file) {
   $('#scan-in').innerHTML = `<div class="sheet-head"><h2>Leyendo el ticket…</h2></div><p class="lead" style="display:flex;gap:10px;align-items:center"><span class="spinner"></span>Esto tarda unos segundos.</p>`;
   try {
@@ -1046,10 +1097,12 @@ async function readTicket(file) {
       input_schema: {
         type: 'object', required: ['tienda', 'fecha', 'total', 'lineas'], properties: {
           tienda: { type: 'string' }, fecha: { type: 'string', description: 'YYYY-MM-DD' }, total: { type: 'number', description: 'Total pagado, en la moneda del ticket' },
+          hora: { type: ['string', 'null'], description: 'Hora de la compra HH:MM, si aparece' }, num_factura: { type: ['string', 'null'], description: 'Número de factura simplificada o de ticket, tal como aparece' }, direccion: { type: ['string', 'null'], description: 'Dirección o localidad de la tienda, corta' },
+          metodo_pago: { type: ['string', 'null'], enum: ['tarjeta', 'efectivo', 'otro', null], description: 'Cómo se pagó' }, iva: { type: ['array', 'null'], description: 'Desglose de IVA del pie del ticket, una fila por tipo', items: { type: 'object', required: ['tipo', 'base', 'cuota'], properties: { tipo: { type: 'number', description: 'Porcentaje: 4, 10, 21…' }, base: { type: 'number' }, cuota: { type: 'number' } } } },
           lineas: {
             type: 'array', items: {
               type: 'object', required: ['desc', 'uds', 'importe', 'producto', 'cantidad_inventario', 'tipo'], properties: {
-                desc: { type: 'string', description: 'Texto de la línea tal como aparece' },
+                desc: { type: 'string', description: 'Texto de la línea tal como aparece' }, precio_unitario: { type: ['number', 'null'], description: 'Precio por unidad si el ticket lo muestra (P. Unit)' },
                 uds: { type: 'number', description: 'Unidades o paquetes comprados' },
                 importe: { type: 'number', description: 'Importe total de la línea, en la moneda del ticket' },
                 nombre_comun: { type: ['string', 'null'], description: 'Nombre genérico y corto del producto tal como se dice normalmente en el país del ticket, sin marca ni peso (p. ej. Guineo, Fréjol rojo, Papa chola → Papa)' }, producto: { type: ['string', 'null'], description: 'Nombre EXACTO del catálogo o null si no encaja' },
@@ -1075,7 +1128,7 @@ Equivalencias aprendidas (texto del ticket → producto): ${JSON.stringify(S.ali
 Productos que hacen falta para el menú de la semana: ${plan.join(', ') || 'ninguno'}
 
 Reglas:
-- Una línea por producto del ticket; ignora IVA, tarjeta y totales parciales. Si el ticket está en otra moneda, usa el importe en euros.
+- Una línea por producto del ticket; no pongas IVA, tarjeta ni totales parciales como líneas, pero sí rellena hora, num_factura, direccion, metodo_pago e iva con los datos del pie del ticket (nunca el número de la tarjeta). Si el ticket está en otra moneda, usa el importe en euros.
 - producto: el nombre exacto del catálogo si es claramente ese producto; si no, null.
 - Si es comida de cocinar que NO está en el catálogo (p. ej. cerdo en tacos), producto = null y rellena nombre_nuevo (nombre genérico corto), unidad_nueva, cantidad_envase y categoria_nueva para crearlo; así entra a la despensa.
 - Hogar: si es lo mismo que un producto de hogar ya conocido (estropajo, esponja y fibra son lo mismo; también lavavajillas y detergente a mano…), usa EXACTAMENTE el nombre conocido en producto_hogar; no inventes otro.
@@ -1087,12 +1140,16 @@ Reglas:
     if (data.stop_reason === 'max_tokens') throw new Error('El ticket tiene tantas líneas que la respuesta se cortó. Haz la foto en dos partes (arriba y abajo) y sube cada una, o apúntalo a mano.');
     const tu = (data.content || []).find(c => c.type === 'tool_use'); if (!tu) throw new Error('La IA no devolvió el ticket. Prueba con otra foto.');
     const x = tu.input;
-    RV = { tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; let nn = null;
+    if (TK_COMPLETE) { const t = S.tickets.find(q => q.id === TK_COMPLETE); TK_COMPLETE = null;
+      if (!t) throw new Error('No encuentro ese ticket.'); if (Math.abs((Number(x.total) || 0) - t.total) > 0.05) throw new Error(`El total de la foto (${eur(Number(x.total) || 0)}) no coincide con este ticket (${eur(t.total)}). No he cambiado nada.`);
+      Object.assign(t, metaFrom(x)); (x.lineas || []).forEach((l, i) => { const m = t.lineas[i]; if (m && Number(l.precio_unitario) > 0 && !m.pu) m.pu = Number(l.precio_unitario); }); TK_OPEN = 'per:' + t.id; save(); $('#dlg-scan').close(); render(); toast('Datos de la factura guardados'); return; }
+    RV = { meta: metaFrom(x), tienda: x.tienda || '', fecha: (x.fecha || '').slice(0, 10) || localDay(), total: Number(x.total) || 0, lineas: (x.lineas || []).map(l => { const sn = l.es_snack === true && l.tipo !== 'Hogar' && !S.P[l.producto]; let nn = null;
       if (!sn && !S.P[l.producto] && l.tipo !== 'Hogar' && l.tipo !== 'Extra') { const nm = sentence(l.nombre_nuevo || l.nombre_comun || cleanDesc(l.desc)); if (nm) { const same = findName(nm, Object.keys(S.P), false); let u = ['g', 'ml', 'ud'].includes(l.unidad_nueva) ? l.unidad_nueva : 'ud'; if (u !== 'ud' && !(Number(l.cantidad_envase) > 0)) u = 'ud'; if (same) nn = { ex: same }; else nn = { name: nm, u, q: Number(l.cantidad_envase) > 0 ? Number(l.cantidad_envase) : 1, cat: l.categoria_nueva || '' }; } }
       const hp = l.tipo === 'Hogar' ? (findName(l.producto_hogar || l.desc, Object.keys(S.HP), true) || '') : '';
-      return { nn: nn && nn.name ? nn : null, es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : nn && nn.ex ? nn.ex : nn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : nn && nn.ex ? (Number(l.uds) || 1) * (S.P[nn.ex].q || 1) : nn && nn.name ? (Number(l.uds) || 1) * nn.q : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: hp || l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
+      return { pu: Number(l.precio_unitario) > 0 ? Number(l.precio_unitario) : 0, nn: nn && nn.name ? nn : null, es_snack: sn, desc: l.desc || '', uds: Number(l.uds) || 1, importe: Number(l.importe) || 0, producto: S.P[l.producto] ? l.producto : sn ? '__new' : nn && nn.ex ? nn.ex : nn ? '__new' : '', inv: sn ? Number(l.uds) || 1 : nn && nn.ex ? (Number(l.uds) || 1) * (S.P[nn.ex].q || 1) : nn && nn.name ? (Number(l.uds) || 1) * nn.q : Number(l.cantidad_inventario) || 0, tipo: sn ? 'Extra' : ['Extra', 'Hogar'].includes(l.tipo) ? l.tipo : 'De la lista', grupo: sn ? 'Dulces y antojos' : l.grupo || 'Otros', ncom: l.nombre_comun || '', hprod: hp || l.producto_hogar || (l.tipo === 'Hogar' ? l.desc : ''), hcat: HCATS.includes(l.categoria_hogar) ? l.categoria_hogar : 'Otros' }; }) };
     renderReview();
   } catch (e) {
+    TK_COMPLETE = null;
     $('#scan-in').innerHTML = `<div class="sheet-head"><h2>No se pudo leer</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div><div class="check bad">${esc(e.message)}</div><button type="button" class="btn ghost wide" id="sc-manual">Apuntarlo a mano</button>`;
   }
 }
@@ -1161,9 +1218,9 @@ function saveReview() {
       if (S.region !== 'ES' && nc && nc.toLowerCase() !== prod.toLowerCase()) { S.lname = S.lname || {}; S.lname[prod] = nc; LOC_FOR = null; }
       if (l.inv > 0 && l.importe > 0) learn.push({ p: prod, pu: r2(l.importe / l.inv * 10000) / 10000, n: S.region !== 'ES' ? nc : '' });
     }
-    lineas.push({ desc: l.desc, producto: prod, inv: prod && S.P[prod] ? Number(l.inv) || 0 : 0, uds: Number(l.uds) || 1, importe: r2(Number(l.importe) || 0), tipo: l.tipo, grupo: l.tipo === 'Extra' ? l.grupo : null });
+    lineas.push({ desc: l.desc, producto: prod, inv: prod && S.P[prod] ? Number(l.inv) || 0 : 0, uds: Number(l.uds) || 1, importe: r2(Number(l.importe) || 0), tipo: l.tipo, grupo: l.tipo === 'Extra' ? l.grupo : null, ...(l.pu > 0 ? { pu: l.pu } : {}) });
   }
-  S.tickets.push({ id, fecha: RV.fecha, tienda: RV.tienda || 'Tienda', total: r2(Number(RV.total) || lineas.reduce((a, l) => a + l.importe, 0)), lineas });
+  S.tickets.push({ id, fecha: RV.fecha, tienda: RV.tienda || 'Tienda', total: r2(Number(RV.total) || lineas.reduce((a, l) => a + l.importe, 0)), lineas, ...(RV.meta || {}) });
   if (learn.length && PROXY && S.code) pushPost('comunidad/aprende', { region: S.region, items: learn }).catch(() => {});
   RV = null; $('#dlg-scan').close(); render(); toast('Ticket guardado. Despensa y presupuesto actualizados');
 }

@@ -290,9 +290,9 @@ details.adv[open]{display:grid;gap:10px}
 .how .num .km{display:block;font-size:12px;color:var(--accent);font-weight:700;text-align:right}
 
 /* Historial mensual */
-details.months>summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}
-details.months>summary::-webkit-details-marker{display:none}
-details.months[open]>summary{margin-bottom:8px}
+details.months>summary,details.tkall>summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}
+details.months>summary::-webkit-details-marker,details.tkall>summary::-webkit-details-marker{display:none}
+details.months[open]>summary,details.tkall[open]>summary{margin-bottom:8px}
 .mrow{border-top:1px solid var(--line);padding:8px 0;display:grid;gap:4px}
 .mrow .mh{display:flex;justify-content:space-between;gap:8px}
 .mbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--card2)}
@@ -317,3 +317,14 @@ details.months[open]>summary{margin-bottom:8px}
 .quick{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:6px}
 
 .inv-qbox{display:contents}.inv-env{display:flex;flex-direction:column;gap:2px;color:var(--mid)}.inv-env .qty{width:90px}
+/* Detalle de ticket */
+.tk-open{text-align:left;font-size:14px}
+.tk-det{padding:4px 0 10px 14px;border-left:2px solid var(--line);margin:0 0 6px 4px;display:grid;gap:6px}
+.tkl{padding:4px 0;border-top:1px dashed var(--line)}
+.tkl-h{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.tk-iva{border-collapse:collapse;font-size:12px;width:100%}.tk-iva th,.tk-iva td{text-align:left;padding:2px 6px 2px 0}.tk-iva td:nth-child(n+2),.tk-iva th:nth-child(n+2){text-align:right}
+.tkf{display:grid;gap:8px;margin-top:6px;padding:10px;border:1px solid var(--line);border-radius:12px}
+.receipt{background:var(--card,#fff);border:1px dashed var(--line);border-left:2px solid var(--line);border-radius:10px;padding:10px 12px;font-variant-numeric:tabular-nums}
+.rc-h{font-size:13px;line-height:1.35;text-align:center;padding-bottom:6px}
+.rc-total{display:flex;justify-content:space-between;font-weight:700;border-top:2px solid var(--line);padding-top:6px;margin-top:4px}
+.tk-mes{padding:10px 0 2px}
