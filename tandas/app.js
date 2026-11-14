@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.10 · 13 nov';
+const VERSION = '2.10.1 · 14 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -493,7 +493,7 @@ function monthEndCheck() {
     <p class="small muted">Queda guardado en el resumen de arriba → «Tus gastos por mes».</p>
     <button type="button" class="btn wide" data-close>Entendido</button>`;
   $('#dlg-pop').showModal();
-  try { if ('Notification' in window && Notification.permission === 'granted' && document.hidden) navigator.serviceWorker.ready.then(r => r.showNotification('Tandas', { body: `Resumen de ${monthName(k)}: gastaste ${eur(tot)} en comida.`, icon: 'icons/icon-192.png', tag: 'tandas-mes' })); } catch (e) {}
+  try { if ('Notification' in window && Notification.permission === 'granted' && document.hidden) navigator.serviceWorker.ready.then(r => r.showNotification('Oiko Meals', { body: `Resumen de ${monthName(k)}: gastaste ${eur(tot)} en comida.`, icon: 'icons/icon-192.png', tag: 'tandas-mes' })); } catch (e) {}
 }
 
 /* ---------- Render: recetas ---------- */
@@ -1020,7 +1020,7 @@ $('#dlg-settings').addEventListener('click', async ev => {
 $('#file-backup').addEventListener('change', async ev => {
   const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
   try { const d = JSON.parse(await f.text()); if (!d.P || !d.R || !d.stock) throw new Error(); const keep = { apiKey: S.apiKey, code: S.code, name: S.name }; localStorage.setItem(KEY, JSON.stringify(d)); S = load(); S.apiKey = keep.apiKey; S.code = keep.code; if (!S.name) S.name = keep.name; save(); $('#dlg-settings').close(); render(); toast('Copia importada'); }
-  catch (e) { toast('Ese archivo no es una copia válida de Tandas'); }
+  catch (e) { toast('Ese archivo no es una copia válida de Oiko Meals'); }
 });
 
 /* ---------- IA: llamada a la API ---------- */
@@ -1383,7 +1383,7 @@ function aiContext() {
   const recs = S.R.map(r => `${r.id}: ${r.n} (${r.tipos.join('/')}${S.mine.includes(r.id) ? ', en Mi recetario' : ''})`).join('\n');
   const si = spentInfo(); const pend = shop(S.plan).total;
   const recent = S.chat.filter(m => (m.r === 'u' || m.r === 'a' || m.r === 't') && !isErr(m)).slice(-9, -1).map(m => (m.r === 'u' ? 'Usuario: ' : m.r === 't' ? 'Hecho: ' : 'Tú: ') + m.t).join('\n');
-  return `Eres el asistente de la app Tandas: llevas la despensa, el menú y el gasto en comida de ${S.name || 'la persona que usa la app'}.
+  return `Eres el asistente de la app Oiko Meals: llevas la despensa, el menú y el gasto en comida de ${S.name || 'la persona que usa la app'}.
 REGLA PRINCIPAL: atiende SOLO su último mensaje. La conversación anterior ya está procesada y sus cambios ya están guardados en la despensa: NUNCA repitas una acción de un mensaje anterior. Úsala solo para entender a qué se refiere ("la otra", "eso", "también").
 Precisión (muy importante):
 - Antes de tocar nada, identifica cada producto del catálogo, la cantidad y la operación. "Usé / puse / gasté X" para comérselo = anotar_consumo (resta y suma el coste a lo que come); si no se lo comió (lo tiró, se estropeó) = ajustar_despensa restar. "Compré / me han dado X" = sumar X. "Me queda / tengo / hay X" = fijar X. "Me comí N de una receta" = anotar_comida (no restes además sus ingredientes). "Cociné la tanda" = marcar_cocinado.
@@ -1539,7 +1539,7 @@ function dueReminders(now = new Date()) {
   });
 }
 async function notify(t, msg) {
-  try { if ('Notification' in window && Notification.permission === 'granted') { const reg = await navigator.serviceWorker.ready; await reg.showNotification('Tandas', { body: msg, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'tandas-' + t }); return true; } } catch (e) {}
+  try { if ('Notification' in window && Notification.permission === 'granted') { const reg = await navigator.serviceWorker.ready; await reg.showNotification('Oiko Meals', { body: msg, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'tandas-' + t }); return true; } } catch (e) {}
   return false;
 }
 async function checkReminders() {
@@ -1575,7 +1575,7 @@ async function disablePush() {
 }
 async function enableReminders() {
   try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
-  if ('Notification' in window && Notification.permission === 'denied') return toast('Las notificaciones están bloqueadas: actívalas en los ajustes del móvil para Tandas');
+  if ('Notification' in window && Notification.permission === 'denied') return toast('Las notificaciones están bloqueadas: actívalas en los ajustes del móvil para Oiko Meals');
   if ('Notification' in window && Notification.permission === 'granted' && canPush()) {
     try { await enablePush(); toast('Recordatorios activados'); } catch (e) { toast('No pude activar los avisos: ' + e.message); }
   }
@@ -1630,7 +1630,7 @@ $('#dlg-ideas').addEventListener('click', ev => {
 /* ---------- Bienvenida ---------- */
 function openWelcome() {
   $('#welcome-in').innerHTML = `
-    <div class="sheet-head"><h2>Bienvenido a Tandas</h2></div>
+    <div class="sheet-head"><h2>Bienvenido a Oiko Meals</h2></div>
     <p class="lead" style="margin:0">Planifica tus comidas por tandas, controla lo que tienes en casa y cuánto te cuesta cada plato. Es una versión de prueba: tus datos se guardan solo en este móvil.</p>
     <label class="field">¿Cómo te llamas?<input id="wl-name" autocomplete="given-name" maxlength="30"></label>
     <div class="grid2"><label class="field">¿Cuánto puedes gastar en comida?<input id="wl-budget" type="number" min="0" inputmode="decimal" placeholder="Ej.: 100"></label><label class="field">Cada<select id="wl-per"><option value="m">mes</option><option value="s">semana</option></select></label></div>

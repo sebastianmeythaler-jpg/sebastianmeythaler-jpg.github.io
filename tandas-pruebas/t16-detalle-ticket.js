@@ -40,7 +40,7 @@ T('Detalle · completar los datos de la factura con una foto, y rechazar la foto
 });
 T('Archivo · «Todos mis tickets» junta todos por meses y los muestra como un ticket completo', async ({ p, h, ok, eq }) => {
   await h.start(); await setup(h); await h.S(() => { S.tickets.push({ id: 't1', fecha: '2026-10-24', tienda: 'Mercadona', total: 42.25, hora: '19:05', factura: 'F-1', iva: [{ tipo: 10, base: 38.4, cuota: 3.85 }], lineas: [{ desc: 'AGUA 6L', producto: null, inv: 0, uds: 2, pu: 1.1, importe: 2.2, tipo: 'Extra', grupo: 'Otros' }] }, { id: 't2', fecha: '2026-10-31', tienda: 'Frutas Hadi', total: 2.93, lineas: [] }); S.detailsOpen = true; render(); });
-  const d = p.locator('details.tkall'); eq(await d.count(), 1, 'existe el archivo'); await d.locator('> summary').click(); await p.waitForTimeout(100); let tx = await d.innerText();
+  await p.waitForTimeout(600); await h.closeAll(); const d = p.locator('details.tkall'); eq(await d.count(), 1, 'existe el archivo'); await d.locator('> summary').click(); await p.waitForTimeout(100); let tx = await d.innerText();
   ok(/Octubre 2026/.test(tx) && /45,18/.test(tx), 'agrupa por mes con su total'); ok(/Frutas Hadi/.test(tx) && /Mercadona/.test(tx), 'están los tickets de meses anteriores'); ok(await h.S(() => S.tkAllOpen), 'recuerda que está abierto');
   await d.locator('[data-act=tk-open]').nth(1).click(); await p.waitForTimeout(100); tx = await p.locator('details.tkall').innerText();
   ok(/Factura F-1/.test(tx) && /19:05/.test(tx) && /TOTAL/.test(tx) && /10%/.test(tx) && /AGUA 6L/.test(tx) && /× 2 a/.test(tx), 'se ve el ticket completo como en el papel: ' + tx.slice(0, 200));

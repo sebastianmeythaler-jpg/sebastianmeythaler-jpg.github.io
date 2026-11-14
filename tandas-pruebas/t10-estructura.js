@@ -51,3 +51,10 @@ T('Avisos en pantalla · los mensajes duran según su longitud, máximo 2 a la v
   await h.start(); await h.S(() => { toast('uno'); toast('dos'); toast('tres'); }); ok(await p.locator('#toasts > *').count() <= 2, 'máximo 2 avisos a la vez'); const n0 = await p.locator('#toasts > *').count(); const bb = await p.locator('#toasts > *').first().boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); await p.waitForTimeout(200); eq(await p.locator('#toasts > *').count(), n0 - 1, 'al tocar un aviso se cierra');
   await h.S(() => toast('x'.repeat(200))); await p.context().clock.fastForward(3000); ok(await p.locator('#toasts > *').filter({ hasText: 'xxxx' }).count() === 1, 'un aviso largo sigue a los 3 s');
 });
+T('Nombre · la app se llama Oiko Meals (título, manifest, bienvenida, asistente) y conserva dirección y datos', async ({ p, h, ok }) => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'); ok(/<title>Oiko Meals<\/title>/.test(html), 'título de la página');
+  const man = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8')); ok(man.name === 'Oiko Meals' && man.short_name === 'Oiko Meals', 'manifest: ' + man.name);
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8'); ok(!/showNotification\('Tandas'/.test(sw) && /Oiko Meals/.test(sw), 'avisos del service worker');
+  const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8'); ok(/Bienvenido a Oiko Meals/.test(app) && !/Bienvenido a Tandas/.test(app), 'bienvenida'); ok(/asistente de la app Oiko Meals/.test(app), 'asistente'); ok(/localStorage|'tandas-v1'/.test(app) && /tandas-v1/.test(app), 'se conserva la clave de datos tandas-v1 (no se pierde nada)');
+  ok(/tandas-v\d+/.test(sw), 'la caché mantiene su prefijo');
+});

@@ -1,5 +1,5 @@
-/* Service worker de Tandas: la app funciona sin conexión y se actualiza sola cuando hay internet. */
-const CACHE = 'tandas-v51';
+/* Service worker de Oiko Meals: la app funciona sin conexión y se actualiza sola cuando hay internet. */
+const CACHE = 'tandas-v52';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'data.js', 'library.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== 'tandas-state').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -34,7 +34,7 @@ async function remindFromSW() {
     const sent = (remind.sent || {})[t] === dayKey(now) || swsent[t] === dayKey(now);
     if (now >= at && now - at < 3 * 36e5 && !ate && !sent) {
       swsent[t] = dayKey(now);
-      await self.registration.showNotification('Tandas', { body: msg, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'tandas-' + t });
+      await self.registration.showNotification('Oiko Meals', { body: msg, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'tandas-' + t });
     }
   }
   await c.put('swsent', new Response(JSON.stringify(swsent)));
@@ -48,5 +48,5 @@ self.addEventListener('notificationclick', e => {
 /* Recordatorios enviados por el servidor (push): llegan aunque la app esté cerrada, también en iPhone */
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text() }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Tandas', { body: d.body || '', tag: d.tag || 'tandas', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' }));
+  e.waitUntil(self.registration.showNotification(d.title || 'Oiko Meals', { body: d.body || '', tag: d.tag || 'tandas', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' }));
 });

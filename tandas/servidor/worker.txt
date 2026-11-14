@@ -1,5 +1,5 @@
 /*
- * Tandas · servidor (Cloudflare Worker)
+ * Oiko Meals · servidor (Cloudflare Worker)
  *  1) IA para invitados: guarda la clave de Anthropic en secreto y solo deja pasar a quien tenga código.
  *  2) Recordatorios de comidas por notificación push (Android e iPhone), aunque la app esté cerrada.
  *
@@ -91,7 +91,7 @@ async function revisarAvisos(env, ahora = new Date()) {
         if (desde < 0 || desde >= VENTANA_MIN) continue;
         if ((rec.done || {})[comida] === dia || (rec.sent || {})[comida] === dia) continue;
         rec.sent = rec.sent || {}; rec.sent[comida] = dia; cambio = true;
-        const r = await enviarPush(rec, { title: 'Tandas', body: AVISOS[comida], tag: 'tandas-' + comida }, env);
+        const r = await enviarPush(rec, { title: 'Oiko Meals', body: AVISOS[comida], tag: 'tandas-' + comida }, env);
         enviados.push([k.name, comida, r.status]);
         if (r.status === 404 || r.status === 410) { await env.USO.delete(k.name); cambio = false; break; }
       }
@@ -163,7 +163,7 @@ export default {
     if (ruta === '/push/prueba') {
       const id = body.id; const rec = /^[0-9a-f]{64}$/.test(id || '') && JSON.parse(await env.USO.get('sub:' + id) || 'null');
       if (!rec) return error(404, 'peticion', 'No encuentro tu suscripción.');
-      const r = await enviarPush(rec, { title: 'Tandas', body: 'Así te llegarán los recordatorios. ¡Que aproveche!', tag: 'tandas-prueba' }, env);
+      const r = await enviarPush(rec, { title: 'Oiko Meals', body: 'Así te llegarán los recordatorios. ¡Que aproveche!', tag: 'tandas-prueba' }, env);
       return responder(200, { ok: r.ok, status: r.status });
     }
 

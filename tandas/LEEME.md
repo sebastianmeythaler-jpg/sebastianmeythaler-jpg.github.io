@@ -1,4 +1,4 @@
-# Tandas
+# Oiko Meals (antes Tandas)
 
 App web instalable para planificar comidas por tandas, controlar la despensa y el gasto por ración.
 
