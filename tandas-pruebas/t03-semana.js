@@ -23,8 +23,8 @@ T('Semana · «Quitar» elimina el plato sin cocinar al primer toque', async ({ 
 T('Semana · «Quitar» un plato cocinado con raciones pide confirmar', async ({ p, h, ok, eq }) => {
   await h.start(); const { k } = await plate(h, { tanda: true, veces: 3 }); await h.view('semana');
   await p.locator(`#plan-list [data-act=cook][data-k="${k}"]`).click(); await p.waitForTimeout(100);
-  const q = p.locator(`#plan-list [data-act=remove][data-k="${k}"]`); await q.click(); eq(await h.S(() => S.plan.length), 1, 'primer toque no lo quita'); ok(/Quitar\?|Se pierden/i.test(await q.innerText()), 'pide confirmar');
-  await q.click(); eq(await h.S(() => S.plan.length), 0, 'segundo toque lo quita');
+  const q = p.locator(`#plan-list [data-act=remove][data-k="${k}"]`); await h.tap(q); eq(await h.S(() => S.plan.length), 1, 'primer toque no lo quita'); ok(/Quitar\?|Se pierden/i.test(await q.innerText()), 'pide confirmar');
+  await h.tap(q); eq(await h.S(() => S.plan.length), 0, 'segundo toque lo quita');
 });
 T('Semana · el plato opcional (checkbox) cambia ingredientes y precio', async ({ p, h, ok, eq }) => {
   await h.start(); const r = await h.S(() => { const r = S.R.find(r => r.i.some(x => x[2])); return r ? { id: r.id, n: r.n } : null; }); ok(!!r, 'existe alguna receta con ingrediente opcional'); if (!r) return;
@@ -61,9 +61,9 @@ T('Semana · el contador de «Comí N» sube, baja y respeta el máximo', async 
   await h.start(); const { k } = await plate(h, { tanda: true, veces: 5 }); await h.view('semana'); await p.locator(`#plan-list [data-act=cook][data-k="${k}"]`).click(); await p.waitForTimeout(100);
   const left = await h.S(() => leftOf(S.plan[0])); ok(left >= 3, 'la tanda deja varias raciones');
   const plus = () => p.locator(`#plan-list [data-act=eatn][data-k="${k}"][data-d="1"]`), minus = () => p.locator(`#plan-list [data-act=eatn][data-k="${k}"][data-d="-1"]`);
-  ok(await minus().isDisabled(), '− desactivado en 1'); await plus().click(); await plus().click(); ok(/Comí 3/.test(await p.locator('#plan-list').innerText()), 'el botón dice «Comí 3»'); await minus().click(); ok(/Comí 2/.test(await p.locator('#plan-list').innerText()), 'baja a «Comí 2»');
-  for (let i = 0; i < left + 2; i++) if (await plus().isEnabled()) await plus().click(); ok(await plus().isDisabled(), '+ se desactiva en el máximo'); await minus().click();
-  await p.locator(`#plan-list [data-act=eat][data-k="${k}"]`).click(); await p.waitForTimeout(150); await h.closeAll();
+  ok(await minus().isDisabled(), '− desactivado en 1'); await h.tap(plus()); await h.tap(plus()); ok(/Comí 3/.test(await p.locator('#plan-list').innerText()), 'el botón dice «Comí 3»'); await h.tap(minus()); ok(/Comí 2/.test(await p.locator('#plan-list').innerText()), 'baja a «Comí 2»');
+  for (let i = 0; i < left + 2; i++) if (await plus().isEnabled()) await h.tap(plus()); ok(await plus().isDisabled(), '+ se desactiva en el máximo'); await h.tap(minus());
+  await h.tap(p.locator(`#plan-list [data-act=eat][data-k="${k}"]`)); await p.waitForTimeout(150); await h.closeAll();
   eq(await h.S(() => S.log.length), left - 1, 'se anotan tantas raciones como indicó el contador'); eq(await h.S(() => leftOf(S.plan[0])), 1, 'queda 1 ración');
 });
 T('Semana · comer la última ración quita el plato de la semana', async ({ p, h, ok, eq }) => {

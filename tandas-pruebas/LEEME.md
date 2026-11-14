@@ -57,3 +57,8 @@ T('Zona · lo que debe pasar', async ({ p, h, ok, eq }) => {
 - Regla: todo error que aparezca en el móvil se añade aquí **con el caso exacto que lo produjo** antes de darlo por corregido.
 
 - `t16-pensamiento.js`: comprueba que cada llamada a la IA (directa o por el Worker) lleva el pensamiento apagado según el modelo (Haiku «disabled», Sonnet «between_tools») y que un ticket de 40 líneas cabe en 6.000 tokens.
+
+## Recetas propias y «Añadir a la despensa» (v2.11)
+- `t17-recetas-propias.js`: crear, validar, editar y borrar una receta propia; ingredientes nuevos con y sin IA; la receta en toda la cadena (semana, lista, cocinar, comer); avisos dentro de las hojas; cabecera plegada.
+- `t18-despensa-anadir.js`: buscador de la despensa (comida y hogar), texto libre con cantidades («2 kg de arroz, 6 huevos»), productos parecidos sin duplicar, productos nuevos, con IA, con la IA caída y con nombres de Ecuador.
+- `h.tap(locator)` pulsa dejando el botón en mitad de la pantalla: úsalo cuando la barra de abajo pueda tapar el botón.

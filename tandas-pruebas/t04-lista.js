@@ -52,7 +52,7 @@ T('Lista · especias: «Aún tengo» pospone y «Se acabó» las pasa a la lista
   ok(await p.locator('#shop-list').innerText().then(t => t.toLowerCase().includes(n.toLowerCase())), 'aparece en la Lista');
 });
 T('Lista · cosas de casa: «Para casa» aparece y «Comprado» las repone', async ({ p, h, ok, eq }) => {
-  await h.start(); const r = await h.pick({ tipo: 'almuerzo' }); await h.addPlan(r.id, 1); await h.stockFor(r.id, 1); await h.view('despensa'); await p.click('#seg-home'); await p.fill('#h-name', 'Champú'); await p.fill('#h-qty', '1'); await p.click('[data-act=home-add]'); await p.waitForTimeout(100);
+  await h.start(); const r = await h.pick({ tipo: 'almuerzo' }); await h.addPlan(r.id, 1); await h.stockFor(r.id, 1); await h.view('despensa'); await p.click('#seg-home'); await p.click('#btn-inv-add'); await p.click('#ia-cat > summary'); await p.fill('#h-name', 'Champú'); await p.fill('#h-qty', '1'); await p.click('[data-act=home-add]'); await p.waitForTimeout(100); await h.closeAll();
   await p.locator('[data-act=home-out][data-n="Champú"]').click(); await p.waitForTimeout(100); ok(await h.S(() => !S.hstock['Champú'] && S.hwant['Champú'] === 1), 'pasa a «quiero»');
   await h.view('lista'); ok(await p.locator('.home-box').count() === 1, 'sale la caja «Para casa»'); ok(/Champú/.test(await p.locator('.home-box').innerText()), 'con el producto');
   await p.locator('.home-box [data-act=hbuy][data-n="Champú"]').click(); await p.waitForTimeout(100); eq(await h.S(() => S.hstock['Champú']), 1, 'vuelve a haber 1'); ok(await h.S(() => !S.hwant['Champú']), 'ya no se quiere'); eq(await p.locator('.home-box').count(), 0, 'la caja desaparece');

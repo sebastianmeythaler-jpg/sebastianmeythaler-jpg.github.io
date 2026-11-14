@@ -66,6 +66,8 @@ function helpers(env) {
   // ticket «de papel» con lo que pide la Lista (como si la IA lo leyera bien)
   h.ticketFromList = (o = {}) => p.evaluate(o => { const rows = shop(S.plan).rows.filter(x => x.packs > 0); const lineas = rows.map(x => ({ desc: x.n.toUpperCase().slice(0, 20), uds: x.packs, importe: Math.round(x.packs * x.p.p * 100) / 100, producto: x.n, cantidad_inventario: x.packs * x.p.q, tipo: 'De la lista', grupo: null })); lineas.push(...(o.extras || [])); const total = Math.round(lineas.reduce((a, l) => a + l.importe, 0) * 100) / 100; const d = new Date(); return { tienda: o.tienda || 'Mercadona', fecha: o.fecha || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, total: o.total != null ? o.total : total, lineas }; }, o);
   h.scan = async (ticket) => { env.nextTicket = ticket; await p.evaluate(() => { if (!S.apiKey && !S.code) { S.apiKey = 'sk-ant-test'; save(); } }); await p.locator('#btn-scan').click(); await h.scanFile(); await p.waitForSelector('#rv-save', { timeout: 5000 }); };
+  // pulsa dejando el botón en mitad de la pantalla (que no lo tape la barra de abajo)
+  h.tap = async loc => { await loc.evaluate(e => e.scrollIntoView({ block: 'center' })); await loc.click({ force: true }); };
   h.approx = (a, b, d = 0.02) => Math.abs(a - b) <= d;
   return h;
 }
