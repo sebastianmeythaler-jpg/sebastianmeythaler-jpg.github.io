@@ -68,11 +68,11 @@ T('Recetas · cada chip de filtro da resultados (o un mensaje claro)', async ({ 
   for (const f of chips) { await p.locator(`#filters [data-f=${f}]`).click(); await p.waitForTimeout(60); const n = await p.locator('#recipe-list article.card').count(); const e = await p.locator('#recipe-list .empty').count(); ok(n > 0 || e === 1, `filtro «${f}» no deja la pantalla en blanco`); await p.locator(`#filters [data-f=${f}]`).click(); }
 });
 T('Recetas · «solo para varios días» deja solo las de tanda', async ({ p, h, ok, eq }) => {
-  await h.start(); await p.click('#seg-explore'); await p.check('#only-tanda'); await p.waitForTimeout(150);
+  await h.start(); await p.click('#seg-explore'); await p.locator('#filters [data-act=tanda]').click(); await p.waitForTimeout(150);
   await p.evaluate(() => document.querySelectorAll('details.rgroup').forEach(d => d.open = true)); await p.waitForTimeout(50);
   ok(await h.S(() => S.onlyTanda), 'S.onlyTanda activo');
   const bad = await p.locator('#recipe-list article.card').evaluateAll(cs => cs.filter(c => !/Para varios días/.test(c.innerText)).length); eq(bad, 0, 'todas llevan la etiqueta «Para varios días»');
-  await p.uncheck('#only-tanda'); ok(!(await h.S(() => S.onlyTanda)), 'se desactiva');
+  await p.locator('#filters [data-act=tanda]').click(); ok(!(await h.S(() => S.onlyTanda)), 'se desactiva');
 });
 T('Recetas · el + añade a la semana, sube/baja y el − al llegar a 0 la quita', async ({ p, h, ok, eq }) => {
   await h.start(); const r = await h.pick({ tipo: 'almuerzo' }); await h.exploreAdd(r);

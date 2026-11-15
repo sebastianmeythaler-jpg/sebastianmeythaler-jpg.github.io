@@ -62,3 +62,4 @@ T('Zona · lo que debe pasar', async ({ p, h, ok, eq }) => {
 - `t17-recetas-propias.js`: crear, validar, editar y borrar una receta propia; ingredientes nuevos con y sin IA; la receta en toda la cadena (semana, lista, cocinar, comer); avisos dentro de las hojas; cabecera plegada.
 - `t18-despensa-anadir.js`: buscador de la despensa (comida y hogar), texto libre con cantidades («2 kg de arroz, 6 huevos»), productos parecidos sin duplicar, productos nuevos, con IA, con la IA caída y con nombres de Ecuador.
 - `h.tap(locator)` pulsa dejando el botón en mitad de la pantalla: úsalo cuando la barra de abajo pueda tapar el botón.
+- `t19-publicacion.js`: pasos opcionales en la receta propia, chip «Varios días», editar precio y tamaño de un producto (también desde la tarjeta de la receta y en especias), cabecera que se encoge al bajar (y se abre entera si la despliegas), tamaño de toque del nombre del producto.

@@ -3,7 +3,7 @@
    Todo se guarda en este dispositivo (localStorage). La IA usa la clave de API del usuario. */
 
 const KEY = 'tandas-v1';
-const VERSION = '2.11 · 14 nov';
+const VERSION = '2.11 · 15 nov';
 // Servidor intermedio que paga la IA para los invitados (Cloudflare Worker). Vacío = solo clave propia.
 const PROXY = 'https://tandas.sebastian-meythaler.workers.dev/';
 // Clave pública para las notificaciones push (la privada solo está en el servidor)
@@ -531,10 +531,10 @@ function howTo(r, key, veces, k) {
   const open = S.openHow.includes(key); const e = eq(); const whole = !!r.tanda && r.rac > 1; // lo que se hornea o cocina de una vez: receta completa
   const mult = whole ? Math.max(1, Math.ceil(veces * e / r.rac)) : veces * e / r.rac; const raciones = whole ? mult * r.rac : veces * e;
   const cov = coverage(r, whole ? mult * r.rac / e : veces, true, k);
-  return `<details class="how" data-how="${key}" ${open ? 'open' : ''}><summary>Ingredientes y pasos</summary><div class="how-body">
+  return `<details class="how" data-how="${key}" ${open ? 'open' : ''}><summary>${(S.STEPS[r.id] || []).length || !r.own ? 'Ingredientes y pasos' : 'Ingredientes'}</summary><div class="how-body">
     ${r.i.length ? `<h4>Ingredientes · ${whole ? 'receta completa, ' : ''}${raciones.toLocaleString('es-ES')} ${raciones === 1 ? 'ración' : 'raciones'}</h4>
     <ul>${r.i.map(([n, q, o]) => { const c = cov.find(x => x.n === n); const st = c ? (c.ok ? '<span class="st ok">en casa</span>' : `<span class="st miss">${c.c ? 'falta 1 bote' : 'falta ' + fmtQ(c.miss, S.P[n].u)}</span>`) : ''; return `<li><span>${esc(n)}${o ? ' <span class="muted">(opcional)</span>' : ''} ${st}</span><span class="num">${fmtQ(q * mult, rU(n))}${(m => m ? `<small class="km">${m}</small>` : '')(kitchen(n, q * mult, rU(n)))}</span></li>`; }).join('')}</ul><p class="small muted" style="margin:4px 0 0">tz = taza (240 ml) · cda = cucharada sopera · cdta = cucharadita de café</p>` : ''}
-    <h4>Pasos</h4><ol>${(S.STEPS[r.id] || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol>${glosario(S.STEPS[r.id] || [])}</div></details>`;
+    ${(S.STEPS[r.id] || []).length ? `<h4>Pasos</h4><ol>${S.STEPS[r.id].map(s => `<li>${esc(s)}</li>`).join('')}</ol>${glosario(S.STEPS[r.id])}` : r.own ? `<p class="small muted" style="margin:4px 0 0">Sin pasos. Si quieres, toca «Editar» y escríbelos.</p>` : ''}</div></details>`;
 }
 /* Dibujo del plato (como en la carta de un restaurante): emojis según el plato y sus ingredientes */
 const ART = [[/pizza/i, '🍕'], [/hamburgues/i, '🍔'], [/taco|faja|fajita|burrito|quesadilla|wrap|fajipizza/i, '🌯'], [/s[aá]ndwich|mixto/i, '🥪'], [/sopa|crema de (?!cacao|cacahuete)|potaje|chile|lentejas|garbanzos/i, '🍲'],
@@ -570,7 +570,7 @@ function recipeCard(r, explore) {
     <div class="meta">${r.own ? '<span class="tag acc">Tuya</span>' : ''}${r.tipos.map(t => `<span class="tag">${t[0].toUpperCase() + t.slice(1)}</span>`).join('')}${r.tanda ? '<span class="tag acc" title="Se cocina una vez y se come varios días">Para varios días</span>' : ''}${cookedIt ? `<span class="tag acc">Cocinado · quedan ${leftOf(cookedIt)}</span>` : ''}${hasOpc ? `<span class="tag">+ ${esc(optNames(r).join(' y '))} opc.</span>` : ''}</div>
     <div class="cost"><div class="price">${eur(perRacion(r, false))}<small>por ración${kcalTxt(r, false)}</small></div>${ctrl}</div>
     ${it && !explore ? `<div class="small muted">En tu semana: ${it.veces} ${it.veces === 1 ? 'plato' : 'platos'} · ≈ ${eur(perRacion(r, it.opc) * it.veces * eq())}</div>` : ''}
-    ${r.own && r.i.some(x => S.P[x[0]] && !(S.P[x[0]].p > 0)) ? `<div class="small muted">Sin precio todavía: ${esc(r.i.map(x => x[0]).filter(n => S.P[n] && !(S.P[n].p > 0)).join(', '))}. Se pondrá solo con tu próximo ticket.</div>` : ''}
+    ${r.own && r.i.some(x => S.P[x[0]] && !(S.P[x[0]].p > 0)) ? `<div class="small muted">Sin precio todavía: ${esc(r.i.map(x => x[0]).filter(n => S.P[n] && !(S.P[n].p > 0)).join(', '))}. Se pondrá solo con tu próximo ticket, o <span>${r.i.map(x => x[0]).filter(n => S.P[n] && !(S.P[n].p > 0)).map(n => `<button type="button" class="link" data-act="p-edit" data-n="${esc(n)}">pon el precio de ${esc(n)}</button>`).join(' · ')}</span>.</div>` : ''}
     ${haveLine(r, explore ? null : it)}
     ${impact}
     ${howTo(r, (explore ? 'e-' : 'r-') + r.id, it && !explore ? it.veces : 1, it && !explore ? it.k : null)}
@@ -578,8 +578,7 @@ function recipeCard(r, explore) {
 }
 function renderRecetas() {
   $('#seg-mine').setAttribute('aria-pressed', S.seg === 'mine'); $('#seg-explore').setAttribute('aria-pressed', S.seg === 'explore');
-  $('#filters').innerHTML = `<button type="button" class="chip" data-act="filter" data-f="" aria-pressed="${S.filter.length === 0}">Todas</button>` + FILTERS.map(([k, l]) => `<button type="button" class="chip" data-act="filter" data-f="${k}" aria-pressed="${S.filter.includes(k)}">${l}</button>`).join('');
-  $('#only-tanda').checked = S.onlyTanda;
+  $('#filters').innerHTML = `<button type="button" class="chip" data-act="filter" data-f="" aria-pressed="${S.filter.length === 0}">Todas</button>` + FILTERS.map(([k, l]) => `<button type="button" class="chip" data-act="filter" data-f="${k}" aria-pressed="${S.filter.includes(k)}">${l}</button>`).join('') + `<button type="button" class="chip" data-act="tanda" aria-pressed="${!!S.onlyTanda}" title="Platos que se cocinan una vez y se comen varios días">Varios días</button>`;
   const explore = S.seg === 'explore';
   const qn = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const q = qn(S.rq || '');
   const list = S.R.filter(r => (explore ? !S.mine.includes(r.id) : S.mine.includes(r.id)) && (S.filter.length === 0 || r.tipos.some(t => S.filter.includes(t))) && (!S.onlyTanda || r.tanda) && (!q || qn(r.n).includes(q) || qn(locText(r.n)).includes(q) || r.i.some(x => qn(x[0]).includes(q) || qn(locText(x[0])).includes(q))));
@@ -730,7 +729,7 @@ function renderHogar() {
 }
 function renderDespensa() {
   $('#seg-food').setAttribute('aria-pressed', S.invSeg !== 'home'); $('#seg-home').setAttribute('aria-pressed', S.invSeg === 'home');
-  $('#desp-lead').textContent = S.invSeg === 'home' ? 'Aseo personal, limpieza y cosas de casa. No cuentan en tu presupuesto de comida.' : 'Lo que tienes en casa para comer.';
+  $('#desp-lead').textContent = S.invSeg === 'home' ? 'Aseo personal, limpieza y cosas de casa. No cuentan en tu presupuesto de comida.' : 'Lo que tienes en casa para comer. Toca un producto para ajustar su precio o tamaño.';
   if (S.invSeg === 'home') return renderHogar();
   const items = Object.entries(S.stock).filter(([n, q]) => S.P[n] && q > 0); const reserved = needs(S.plan);
   let total = 0; const fq = qn(IQ.trim()); const hit = n => !fq || qn(n).includes(fq) || qn(locText(n)).includes(fq); let shown = 0;
@@ -746,7 +745,7 @@ function renderDespensa() {
     for (const [n, q] of rows) {
       const p = S.P[n]; const v = q * p.p / p.q; total += v; const rs = reserved.get(n);
       const extra = p.c ? `<span class="res">${q === 1 ? 'bote' : 'botes'} de ${p.g} ${p.gu || 'g'}${S.since[n] ? ` · desde hace ${Math.max(0, Math.floor((Date.now() - S.since[n]) / (7 * 864e5)))} sem.` : ''}</span>` : rs ? `<span class="res">Tu semana usa ${fmtQ(Math.min(q, rs), p.u)} · libre ${fmtQ(Math.max(0, q - rs), p.u)}${rs > q + 1e-6 ? ' · no alcanza' : ''}</span>` : '';
-      html += `<div class="inv-r"><span>${esc(n)}</span><span class="q"><input class="qty" type="number" min="0" step="${p.u === 'ud' ? 1 : 'any'}" inputmode="decimal" value="${r2(q)}" data-act="stock" data-n="${esc(n)}" aria-label="Cantidad de ${esc(n)}">${p.u}</span><span class="num small">${eur(v)}</span>${extra}</div>`;
+      html += `<div class="inv-r"><button type="button" class="nm" data-act="p-edit" data-n="${esc(n)}" aria-label="Precio y tamaño de ${esc(n)}">${esc(n)}</button><span class="q"><input class="qty" type="number" min="0" step="${p.u === 'ud' ? 1 : 'any'}" inputmode="decimal" value="${r2(q)}" data-act="stock" data-n="${esc(n)}" aria-label="Cantidad de ${esc(n)}">${p.u}</span><span class="num small">${eur(v)}</span>${extra}</div>`;
     }
   });
   if (fq && !shown) html += `<div class="empty" style="border:0">No tienes «${esc(IQ.trim())}» en casa.<button type="button" class="btn small" data-act="inv-new" data-q="${esc(IQ.trim())}" style="margin-top:10px">＋ Añadirlo a la despensa</button></div>`;
@@ -855,7 +854,8 @@ document.addEventListener('click', ev => {
   if (b.id === 'seg-mine' || b.id === 'seg-explore') { S.seg = b.id === 'seg-mine' ? 'mine' : 'explore'; render(); return; }
   const a = b.dataset.act; if (!a) return;
   const it = b.dataset.k !== undefined ? S.plan.find(p => String(p.k) === b.dataset.k) : null;
-  if (a === 'filter') { const f = b.dataset.f; S.filter = f === '' ? [] : (S.filter.includes(f) ? S.filter.filter(x => x !== f) : S.filter.concat(f)); }
+  if (a === 'tanda') S.onlyTanda = !S.onlyTanda;
+  else if (a === 'filter') { const f = b.dataset.f; S.filter = f === '' ? [] : (S.filter.includes(f) ? S.filter.filter(x => x !== f) : S.filter.concat(f)); }
   else if (a === 'addone') S.plan.push({ k: S.seq++, rid: b.dataset.id, veces: 1, opc: false });
   else if (a === 'veces' && it) { const nv = Math.min(30, it.veces + Number(b.dataset.d)); if (nv < 1) S.plan = S.plan.filter(p => p !== it); else it.veces = nv; }
   else if (a === 'remove' && it) { if (it.cocinado && leftOf(it) > 0 && b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = `¿Quitar? Se pierden ${leftOf(it)} raciones cocinadas`; return; } S.plan = S.plan.filter(p => p !== it); }
@@ -868,6 +868,7 @@ document.addEventListener('click', ev => {
     for (let i = 0; i < n && S.plan.includes(it); i++) { eatOne(it); const m = deductMsg(lastDeduct); if (m) msgs.push(m); lastDeduct = null; }
     delete eatN[it.k]; render(); if (msgs.length) toast(msgs[msgs.length - 1]); return enjoyed(n, r);
   }
+  else if (a === 'p-edit') return openPriceForm(b.dataset.n);
   else if (a === 'rc-new') return openRecipeForm();
   else if (a === 'rc-edit') return openRecipeForm(b.dataset.id);
   else if (a === 'go-explore') { S.seg = 'explore'; }
@@ -930,8 +931,7 @@ document.addEventListener('click', ev => {
 document.addEventListener('change', ev => {
   const t = ev.target;
   if (t.id === 'cyc-note') { S.cycleNote = t.value.trim().slice(0, 60); save(); return; }
-  if (t.id === 'only-tanda') S.onlyTanda = t.checked;
-  else if (t.id === 'sn-prod') { S.snackSel = t.value; $('#sn-unit').textContent = S.P[t.value].u; $('#sn-qty').value = snackDefault(t.value); save(); return; }
+  if (t.id === 'sn-prod') { S.snackSel = t.value; $('#sn-unit').textContent = S.P[t.value].u; $('#sn-qty').value = snackDefault(t.value); save(); return; }
   else if (t.id === 'inv-prod' || t.id === 'inv-mode') { if (t.id === 'inv-prod') S.invSel = t.value; else S.invMode = t.value; $('#inv-qbox').innerHTML = invAddRow(S.P[$('#inv-prod').value]); save(); return; }
   else if (t.dataset.act === 'opc') { const it = S.plan.find(p => String(p.k) === t.dataset.k); if (it) it.opc = t.checked; }
   else if (t.dataset.act === 'cart') { S.cart = S.cart || {}; if (t.checked) S.cart[t.dataset.n] = 1; else delete S.cart[t.dataset.n]; }
@@ -1676,6 +1676,24 @@ function addProduct(n, o) {
 let FORM = null, RC = null, INV = null;
 const formErr = m => { const el = $('#form-err'); if (el) { el.textContent = m; el.hidden = !m; if (m) el.scrollIntoView({ block: 'nearest' }); } };
 
+/* --- Precio y tamaño de un producto --- */
+function openPriceForm(n) {
+  const p = S.P[n]; if (!p) return; FORM = 'pe'; const u = p.c ? (p.gu || 'g') : p.u;
+  $('#form-in').innerHTML = `<div class="sheet-head"><h2>${esc(locText(n))}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">✕</button></div>
+    <p class="small muted" style="margin:0">${p.p > 0 ? `Ahora: ${esc(p.f)} a ${eur(p.p)}.` : 'Todavía no tiene precio.'} Con esto la app calcula lo que cuesta cada ración y la lista de la compra.</p>
+    <div class="grid2"><label class="field">Precio de un ${p.c ? 'bote' : 'envase'} (${SYM()})<input id="pe-p" type="number" min="0" step="0.01" inputmode="decimal" value="${p.p > 0 ? esc(p.p) : ''}" placeholder="0,00"></label>
+      <label class="field">${u === 'ud' ? 'Unidades' : u === 'ml' ? 'ml' : 'Gramos'} por ${p.c ? 'bote' : 'envase'}<input id="pe-q" type="number" min="0" step="any" inputmode="decimal" value="${esc(p.c ? p.g : p.q)}"></label></div>
+    <div class="check bad" id="form-err" hidden></div><button type="button" class="btn wide" data-pe="save" data-n="${esc(n)}">Guardar</button>`;
+  if (!$('#dlg-form').open) $('#dlg-form').showModal();
+}
+function savePriceForm(n) {
+  const p = S.P[n]; if (!p) return; const pr = $('#pe-p').value.trim() === '' ? NaN : Number($('#pe-p').value), q = Number($('#pe-q').value);
+  if (!(pr >= 0)) return formErr('Escribe el precio (puede ser 0 si no lo sabes).'); if (!(q > 0)) return formErr('El tamaño tiene que ser mayor que 0.');
+  const u = p.c ? (p.gu || 'g') : p.u; const old = p.c ? p.g : p.q;
+  p.p = r2(pr); if (p.c) p.g = q; else p.q = q;
+  if (q !== old) p.f = u === 'ud' ? (q === 1 ? 'Unidad' : `Pack ${q}`) : `${q} ${u}`;
+  FORM = null; $('#dlg-form').close(); render(); toast(`${n}: ${eur(p.p)} por ${p.c ? 'bote' : 'envase'} (${p.f})`);
+}
 /* --- Receta propia --- */
 function openRecipeForm(id) {
   const r = id ? byId(id) : null; FORM = 'rc';
@@ -1911,7 +1929,8 @@ $('#dlg-form').addEventListener('click', ev => {
     else if (a === 'rm-ing') { rcRead(); RC.ings.splice(Number(b.closest('.rc-ing').dataset.i), 1); if (!RC.ings.length) RC.ings.push({ n: '', q: '', u: 'g' }); $('#rc-ings').innerHTML = RC.ings.map(rcIngRow).join(''); }
     else if (a === 'save') saveRecipeForm();
     else if (a === 'del') { if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = '¿Seguro? Toca otra vez para borrarla'; b.classList.add('warn-t'); return; } deleteRecipe(RC.id); }
-  } else if (FORM === 'inv') {
+  } else if (FORM === 'pe') { if (b.dataset.pe === 'save') savePriceForm(b.dataset.n); }
+  else if (FORM === 'inv') {
     const a = b.dataset.ia; if (!a) return;
     if (a === 'go') invGo(); else if (a === 'save') invSave();
     else if (a === 'back') { INV.step = 'in'; renderInvAdd(); }
@@ -1973,6 +1992,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW && !reloaded) { reloaded = true; location.reload(); } });
 }
 
+{ const top = document.querySelector('.top'); let mini = false; const on = () => { const y = window.scrollY; if (!mini && y > 90 && document.documentElement.scrollHeight - innerHeight > 420) { mini = true; top.classList.add('mini'); } else if (mini && y < 20) { mini = false; top.classList.remove('mini'); } }; window.addEventListener('scroll', on, { passive: true }); }
 let isT = null;
 $('#isearch').addEventListener('input', ev => { clearTimeout(isT); isT = setTimeout(() => { IQ = ev.target.value; renderDespensa(); localize($('#inv-list')); }, 200); });
 let rsT = null;

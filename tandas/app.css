@@ -347,3 +347,11 @@ details.months[open]>summary,details.tkall[open]>summary{margin-bottom:8px}
 .summary[aria-expanded="false"] .seg-legend,.summary[aria-expanded="false"] .sum-row.small{display:none}
 #filters,.inv-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:100%;min-width:0}.view,#inv-list{min-width:0;max-width:100%}#filters::-webkit-scrollbar,.inv-chips::-webkit-scrollbar{display:none}
 #filters .chip,.inv-chips .chip{flex:none;white-space:nowrap}
+
+.inv-r .nm{background:none;border:0;padding:10px 0;margin:-10px 0;min-height:40px;text-align:left;color:inherit;font:inherit;text-decoration:underline dotted var(--line);text-underline-offset:4px}
+/* Cabecera que se encoge al bajar */
+.top.mini .bar-head small,.top.mini .summary[aria-expanded="false"] .sum-row:first-child>.small{display:none}
+.top.mini .bar-head h1{font-size:19px}.top.mini .wrap{padding-block:8px 6px;gap:8px}
+.top.mini .summary[aria-expanded="false"]{padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px}.top.mini .summary[aria-expanded="false"] .sum-row{display:contents}.top.mini .summary[aria-expanded="false"] .sum-big{font-size:20px;order:1}.top.mini .summary[aria-expanded="false"] .pill{order:2;margin-left:auto}.top.mini .summary[aria-expanded="false"] .caret{order:3}
+.top.mini .summary[aria-expanded="false"] .seg,.top.mini .summary[aria-expanded="false"] .seg-legend,.top.mini .summary[aria-expanded="false"] .sum-row.small{display:none}
+.top.mini .summary[aria-expanded="false"] .sum-big,.top.mini .summary[aria-expanded="false"] .sum-big *{white-space:nowrap}.top.mini .summary[aria-expanded="false"] .sum-big small,.top.mini .summary[aria-expanded="false"] .sum-big span{font-size:13px}
